@@ -3416,8 +3416,11 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
     nx = x[:1] + list(np.amin(np.array([loss1[:3,:], loss1[3:,:]]), axis=0).reshape(-1)) + list(loss2) + list(loss0_1) + list(loss0_2)
 
     features = nx
-
     xs = np.array([features])
+
+    roberta_x = [x[0], np.amax(np.concatenate([asr[1:3], asr[4:6]])) , np.amin(np.concatenate([loss1[0:1], loss1[3:4]])), np.amax(asr0_1), np.amax(asr0_2)]
+    roberta_x = np.array([roberta_x])
+
     if not is_configure:
         cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_qa2.pkl'), 'rb'))
         confs = cls.predict_proba(xs)[:,1]
@@ -3425,7 +3428,39 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
         print('confs', confs)
         output = confs[0]
 
-    return output, features
+        # special rules for Roberta
+        if emb_id == 2:
+            full_bounds = pickle.load(open(os.path.join(learned_parameters_dirpath, 'bounds_qa1.pkl'), 'rb'))
+            bounds =  full_bounds[int(roberta_x[0,0])]
+            preds = []
+            for j in range(len(bounds)):
+                s, b = bounds[j]
+                if s :
+                    if roberta_x[0,j+1] > b:
+                        preds.append(True)
+                    else:
+                        preds.append(False)
+                else:
+                    if roberta_x[0,j+1] < b:
+                        preds.append(True)
+                    else:
+                        preds.append(False)
+            if preds[0]:
+                output = 0.895
+            elif preds[1]:
+                output = 0.905
+            elif preds[2]:
+                output = 0.915
+            elif preds[3]:
+                output = 0.925
+            else:
+                output = 0.12
+            print('preds', preds)
+
+    print('full features', features)
+    print('roberta features', roberta_x)
+
+    return output, features, roberta_x
 
 
 if __name__ == "__main__":

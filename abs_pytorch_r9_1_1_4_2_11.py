@@ -2842,6 +2842,10 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
 
     features = nx
     xs = np.array([features])
+
+    roberta_x = [emb_id, np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-16:-8]) , opt_ces[9*3+1], ]
+    roberta_x = np.array([roberta_x])
+
     if not is_configure:
         cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_ner0.pkl'), 'rb'))
         confs = cls.predict_proba(xs)[:,1]
@@ -2849,6 +2853,29 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
         print('confs', confs)
         output = confs[0]
 
-    return output, features
+        # special rules for Roberta
+        if emb_id == 2:
+            full_bounds = pickle.load(open(os.path.join(learned_parameters_dirpath, 'bounds_ner1.pkl'), 'rb'))
+            bounds =  full_bounds[int(roberta_x[0,0])]
+            pred = False
+            for j in range(len(bounds)):
+                s, b = bounds[j]
+                if s :
+                    if roberta_x[0,j+1] > b:
+                        pred = True
+                else:
+                    if roberta_x[0,j+1] < b:
+                        pred = True
+                if pred:
+                    break
+            if pred:
+                output = 0.945
+            else:
+                output = 0.12
+
+    print('full features', features)
+    print('roberta features', roberta_x)
+
+    return output, features, roberta_x
 
 

@@ -2039,8 +2039,13 @@ def sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
     nx = x[:17] + x[17+96:17+96+6] + x[17:17+96] + x[17+96+6:]
     x = nx
     nx = [x[0], x[9], x[13], x[10], x[14], min([x[9], x[13]]), min([x[10], x[14]]), np.min(x[-8:-6]), np.min(x[-4:-2]), np.min(x[17:21]), np.min(x[21:23]),] + x[17:23] # + nx
+
     features = nx
     xs = np.array([features])
+
+    roberta_x = [x[0], np.min([x[9], x[13]]), np.min([x[10], x[14]]), np.min(x[-8:-6]), np.min(x[-4:-2]), np.min(x[17:21]), np.min(x[21:23]),] # + x[17:23] # + nx
+    roberta_x = np.array([roberta_x])
+
     if not is_configure:
         cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_sc1.pkl'), 'rb'))
         confs = cls.predict_proba(xs)[:,1]
@@ -2048,6 +2053,29 @@ def sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
         print('confs', confs)
         output = confs[0]
 
-    return output, features
+        # special rules for Roberta
+        if emb_id == 2:
+            full_bounds = pickle.load(open(os.path.join(learned_parameters_dirpath, 'bounds_sc1.pkl'), 'rb'))
+            bounds =  full_bounds[int(roberta_x[0,0])]
+            pred = False
+            for j in range(len(bounds)):
+                s, b = bounds[j]
+                if s :
+                    if roberta_x[0,j+1] > b:
+                        pred = True
+                else:
+                    if roberta_x[0,j+1] < b:
+                        pred = True
+                if pred:
+                    break
+            if pred:
+                output = 0.935
+            else:
+                output = 0.12
+
+    print('full features', features)
+    print('roberta features', roberta_x)
+
+    return output, features, roberta_x
 
 
