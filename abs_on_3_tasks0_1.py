@@ -4,7 +4,7 @@
 
 # You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
-for_submission = True
+for_submission = False
 import os
 
 import datasets
@@ -34,7 +34,6 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.svm import LinearSVC
 from sklearn.svm import SVC
 from sklearn.calibration import CalibratedClassifierCV
-from sklearn.model_selection import StratifiedKFold
 import sklearn.metrics
 np.set_printoptions(precision=2)
 
@@ -43,7 +42,7 @@ import warnings
 
 from abs_pytorch_r9_1_1_4_1_24 import sc_trojan_detector
 from abs_pytorch_r9_1_1_4_2_3_16 import ner_trojan_detector
-from abs_pytorch_r9_1_1_4_3_3_8 import qa_trojan_detector
+from abs_pytorch_r9_1_1_4_3_3_3 import qa_trojan_detector
 
 warnings.filterwarnings("ignore")
 
@@ -58,36 +57,6 @@ torch.backends.cudnn.deterministic = True
 torch.backends.cudnn.benchmark = False
 np.random.seed(random_seed)
 random.seed(random_seed)
-
-def defer_output(output, model_type):
-
-    ten_digit = np.floor(output * 10)
-
-    if model_type == 'ElectraForSequenceClassification':
-        new_output = ten_digit/10. + 0.015
-    elif model_type == 'DistilBertForSequenceClassification':
-        new_output = ten_digit/10. + 0.025
-    elif model_type == 'RobertaForSequenceClassification':
-        new_output = ten_digit/10. + 0.035
-    elif model_type == 'ElectraForTokenClassification':
-        new_output = ten_digit/10. + 0.045
-    elif model_type == 'DistilBertForTokenClassification':
-        new_output = ten_digit/10. + 0.055
-    elif model_type == 'RobertaForTokenClassification':
-        new_output = ten_digit/10. + 0.065
-    elif model_type == 'ElectraForQuestionAnswering':
-        new_output = ten_digit/10. + 0.075
-    elif model_type == 'DistilBertForQuestionAnswering':
-        new_output = ten_digit/10. + 0.085
-    elif model_type == 'RobertaForQuestionAnswering':
-        new_output = ten_digit/10. + 0.095
-    else:
-        print('error model type unseen', model_type, output)
-        new_output = output
-
-    print('deter output', output, new_output)
-
-    return new_output
 
 
 def example_trojan_detector(model_filepath,
@@ -115,7 +84,6 @@ def example_trojan_detector(model_filepath,
     model = torch.load(model_filepath, map_location=torch.device('cpu'))
     model_type = model.__class__.__name__
     print('model type', model_type, )
-    # sys.exit()
     
     is_configure = False
 
@@ -159,9 +127,6 @@ def example_trojan_detector(model_filepath,
     end_time = time.time()
     print('model type', model_type, 'time', end_time - start_time)
 
-    # output differetidifferetiation
-    output = defer_output(output, model_type)
-
     with open(features_filepath, 'w') as csvfile: 
         csvwriter = csv.writer(csvfile)
         csvwriter.writerow(fields) 
@@ -185,7 +150,7 @@ def feature_extractor(mname, output_parameters_dirpath, configure_models_dirpath
 
     model_filepath = os.path.join(configure_models_dirpath, 'models', mname, 'model.pt')
 
-    examples_dirpath = os.path.join(configure_models_dirpath, 'models', mname, )
+    # examples_dirpath = os.path.join(configure_models_dirpath, 'models', mname, )
     # examples_dirpath = '/data/share/trojai/trojai-round8-v1-dataset/models/id-00000007/example_data/'
 
     round_training_dataset_dirpath = configure_models_dirpath
@@ -269,17 +234,14 @@ def test_cls_param(Xs, ys, ne, md):
     test_accs = []
     roc_aucs = []
     ce_losses = []
-    train_aucs = []
-    # kf = KFold(n_splits=5, shuffle=True)
-    kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=1234)
-    for train_index, test_index in kf.split(Xs, ys):
+    kf = KFold(n_splits=5, shuffle=True)
+    for train_index, test_index in kf.split(Xs):
         try:
         # if True:
             train_X, test_X = Xs[train_index], Xs[test_index]
             train_y, test_y = ys[train_index], ys[test_index]
     
-            # cls = RandomForestClassifier(n_estimators=ne, max_depth=md, criterion='entropy', warm_start=False)
-            cls = RandomForestClassifier(n_estimators=ne, max_depth=md, criterion='entropy', warm_start=False, bootstrap=False, )
+            cls = RandomForestClassifier(n_estimators=ne, max_depth=md, criterion='entropy', warm_start=False)
             cls.fit(train_X, train_y)
     
             preds = cls.predict(train_X)
@@ -305,22 +267,16 @@ def test_cls_param(Xs, ys, ne, md):
             test_accs.append((tp+tn)/float(tp+fp+fn+tn))
     
             confs = cls.predict_proba(test_X)[:,1]
+    
             confs = np.clip(confs, 0.025, 0.975)
     
-            train_confs = cls.predict_proba(train_X)[:,1]
-            train_confs = np.clip(train_confs, 0.025, 0.975)
+            # lr_reg = LogisticRegression(C=100, max_iter=10000, tol=1e-4)
+            lr_reg = LogisticRegression(max_iter=10000, tol=1e-4)
     
-            if False: 
-                # lr_reg = LogisticRegression(C=100, max_iter=10000, tol=1e-4)
-                lr_reg = LogisticRegression(max_iter=10000, tol=1e-4)
+            lr_reg.fit(np.concatenate([train_X, cls.predict_proba(train_X)], axis=1) , train_y)
+            confs = lr_reg.predict_proba( np.concatenate([test_X, cls.predict_proba(test_X)], axis=1) )[:,1]
     
-                lr_reg.fit(np.concatenate([train_X, cls.predict_proba(train_X)], axis=1) , train_y)
-                confs = lr_reg.predict_proba( np.concatenate([test_X, cls.predict_proba(test_X)], axis=1) )[:,1]
-    
-                confs = np.clip(confs, 0.025, 0.975)
-    
-            train_roc_auc = sklearn.metrics.roc_auc_score(train_y, train_confs)
-            train_aucs.append(train_roc_auc)
+            confs = np.clip(confs, 0.025, 0.975)
     
             roc_auc = sklearn.metrics.roc_auc_score(test_y, confs)
             celoss  = sklearn.metrics.log_loss(test_y, confs)
@@ -331,7 +287,6 @@ def test_cls_param(Xs, ys, ne, md):
     test_accs  = np.array(test_accs)
     roc_aucs = np.array(roc_aucs)
     ce_losses  = np.array(ce_losses)
-    print('train roc_aucs', np.mean(train_aucs), np.var(train_aucs), train_aucs)
     print('test accs', np.mean(test_accs), np.var(test_accs), test_accs, )
     print('test roc_aucs', np.mean(roc_aucs), np.var(roc_aucs), roc_aucs)
     print('test ce_losses', np.mean(ce_losses), np.var(ce_losses), ce_losses, )
@@ -427,7 +382,7 @@ def configure(output_parameters_dirpath,
     print('mnames', mnames)
 
     for task_type in ['sc', 'ner', 'qa', ]:
-    # for task_type in ['sc', ]:
+    # for task_type in ['qa', ]:
 
         tmnames = []
         for mname in mnames:
@@ -523,21 +478,18 @@ def configure(output_parameters_dirpath,
         # sys.exit()
 
 
-        # if False:
-        #     print('tmnames', tmnames)
+        if False:
+            print('tmnames', tmnames)
 
-        #     # tmnames = 'id-00000000_id-00000008_id-00000009_id-00000010_id-00000011_id-00000014_id-00000016_id-00000018_id-00000019_id-00000023_id-00000024_id-00000025_id-00000027_id-00000028_id-00000030_id-00000031_id-00000032_id-00000036_id-00000038_id-00000039_id-00000041_id-00000052_id-00000054_id-00000056_id-00000062_id-00000073_id-00000074_id-00000076_id-00000077_id-00000081_id-00000085_id-00000089_id-00000090_id-00000091_id-00000092_id-00000095_id-00000101_id-00000115_id-00000117_id-00000118_id-00000121_id-00000122_id-00000123_id-00000127_id-00000134_id-00000139'
+            # tmnames = 'id-00000000_id-00000008_id-00000009_id-00000010_id-00000011_id-00000014_id-00000016_id-00000018_id-00000019_id-00000023_id-00000024_id-00000025_id-00000027_id-00000028_id-00000030_id-00000031_id-00000032_id-00000036_id-00000038_id-00000039_id-00000041_id-00000052_id-00000054_id-00000056_id-00000062_id-00000073_id-00000074_id-00000076_id-00000077_id-00000081_id-00000085_id-00000089_id-00000090_id-00000091_id-00000092_id-00000095_id-00000101_id-00000115_id-00000117_id-00000118_id-00000121_id-00000122_id-00000123_id-00000127_id-00000134_id-00000139'
 
-        #     # tmnames = 'id-00000001_id-00000002_id-00000006_id-00000007_id-00000021_id-00000029_id-00000034_id-00000035_id-00000037_id-00000043_id-00000045_id-00000046_id-00000047_id-00000048_id-00000049_id-00000050_id-00000051_id-00000053_id-00000055_id-00000058_id-00000059_id-00000060_id-00000065_id-00000066_id-00000067_id-00000068_id-00000070_id-00000071_id-00000075_id-00000083_id-00000084_id-00000087_id-00000096_id-00000098_id-00000100_id-00000103_id-00000107_id-00000109_id-00000111_id-00000112_id-00000113_id-00000114_id-00000116_id-00000119_id-00000125_id-00000126_id-00000128_id-00000130_id-00000132_id-00000135_id-00000137'
+            # tmnames = 'id-00000001_id-00000002_id-00000006_id-00000007_id-00000021_id-00000029_id-00000034_id-00000035_id-00000037_id-00000043_id-00000045_id-00000046_id-00000047_id-00000048_id-00000049_id-00000050_id-00000051_id-00000053_id-00000055_id-00000058_id-00000059_id-00000060_id-00000065_id-00000066_id-00000067_id-00000068_id-00000070_id-00000071_id-00000075_id-00000083_id-00000084_id-00000087_id-00000096_id-00000098_id-00000100_id-00000103_id-00000107_id-00000109_id-00000111_id-00000112_id-00000113_id-00000114_id-00000116_id-00000119_id-00000125_id-00000126_id-00000128_id-00000130_id-00000132_id-00000135_id-00000137'
 
-        #     # tmnames = 'id-00000002_id-00000007_id-00000029_id-00000034_id-00000037_id-00000046_id-00000047_id-00000051_id-00000053_id-00000059_id-00000065_id-00000066_id-00000070_id-00000071_id-00000084_id-00000096_id-00000100_id-00000103_id-00000112_id-00000113_id-00000114_id-00000116_id-00000119_id-00000128_id-00000130_id-00000132_id-00000135'
+            tmnames = 'id-00000002_id-00000007_id-00000029_id-00000034_id-00000037_id-00000046_id-00000047_id-00000051_id-00000053_id-00000059_id-00000065_id-00000066_id-00000070_id-00000071_id-00000084_id-00000096_id-00000100_id-00000103_id-00000112_id-00000113_id-00000114_id-00000116_id-00000119_id-00000128_id-00000130_id-00000132_id-00000135'
 
-        #     tmnames = tmnames.split('_')
+            tmnames = tmnames.split('_')
 
-        #     print('tmnames', tmnames)
-
-        # if True:
-        #     tmnames = tmnames[:20]
+            print('tmnames', tmnames)
  
         # train classifier
         xs = []
@@ -569,10 +521,8 @@ def configure(output_parameters_dirpath,
         if True:
             params = []
             ces = []
-            # for ne in [200, 2000, 5000,]:
-            #     for md in [2,4,6]:
-            for ne in [2000,]:
-                for md in [None]:
+            for ne in [200, 2000, 5000,]:
+                for md in [2,4,6]:
                     params.append((ne, md))
                     ce, auc, acc = test_cls_param(xs, ys, ne, md)
                     ces.append(ce)
@@ -584,25 +534,21 @@ def configure(output_parameters_dirpath,
 
         print('best_param', best_param)
         ne, md = best_param
-        # cls = RandomForestClassifier(n_estimators=ne, max_depth=md, criterion='entropy', warm_start=False)
-        cls = RandomForestClassifier(n_estimators=ne, max_depth=md, criterion='entropy', warm_start=False, bootstrap=False, )
+        cls = RandomForestClassifier(n_estimators=ne, max_depth=md, criterion='entropy', warm_start=False)
         cls.fit(xs, ys)
-        confs = cls.predict_proba(xs)[:,1]
-        # lr_reg = LogisticRegression(max_iter=10000, tol=1e-4)
-        # lr_reg.fit(np.concatenate([xs, cls.predict_proba(xs)], axis=1) , ys)
-        # confs = lr_reg.predict_proba( np.concatenate([xs, cls.predict_proba(xs)], axis=1) )[:,1]
+        lr_reg = LogisticRegression(max_iter=10000, tol=1e-4)
+        lr_reg.fit(np.concatenate([xs, cls.predict_proba(xs)], axis=1) , ys)
+        confs = lr_reg.predict_proba( np.concatenate([xs, cls.predict_proba(xs)], axis=1) )[:,1]
         confs = np.clip(confs, 0.025, 0.975)
         print('after confs', confs)
         roc_auc = sklearn.metrics.roc_auc_score(ys, confs)
         ce_loss  = sklearn.metrics.log_loss(ys, confs)
         print('overall roc_auc', roc_auc, 'celoss', ce_loss)
         
-        if task_type == 'qa':
-            pickle.dump(cls, open('{0}/rf_lr_{1}2.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
-        elif task_type == 'sc':
-            pickle.dump(cls, open('{0}/rf_lr_{1}1.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
+        if task_type == 'qa' or task_type == 'sc':
+            pickle.dump((cls, lr_reg), open('{0}/rf_lr_{1}1.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
         else:
-            pickle.dump(cls, open('{0}/rf_lr_{1}0.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
+            pickle.dump((cls, lr_reg), open('{0}/rf_lr_{1}0.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
 
 
 
