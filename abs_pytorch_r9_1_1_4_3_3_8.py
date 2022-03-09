@@ -3394,6 +3394,29 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
 
 
     output = 0.5
+
+    x = features
+    asr = np.array(x[1:49]).reshape((6,8))
+    asr = np.concatenate([asr[:,:2], asr[:,4:6],], axis=1)
+    loss1 = np.array(x[49:49+6*12]).reshape((6,12))
+    loss1 = np.concatenate([loss1[:,:2], loss1[:,4:6], loss1[:,8:10],], axis=1)
+    loss2 = np.array(x[49+6*12:49+6*12+6]).reshape((6))
+
+    asr0 = np.array(x[49+6*12+6:49+6*12+6+4*8]).reshape((4,8))
+    loss0 = np.array(x[49+6*12+6+4*8:]).reshape((4,12))
+    asr0 = np.concatenate([asr0[:,:2], asr0[:,4:6],], axis=1)
+    loss0 = np.concatenate([loss0[:,:2], loss0[:,4:6], loss0[:,8:10],], axis=1)
+    asr0_1 = np.amax(asr0[:2], axis=0)
+    asr0_2 = np.amax(asr0[2:], axis=0)
+    loss0_1 = np.amin(loss0[:2], axis=0)
+    loss0_2 = np.amin(loss0[2:], axis=0)
+    asr0_3 = np.amax(asr0, axis=0)
+    loss0_3 = np.amin(loss0, axis=0)
+
+    nx = x[:1] + list(np.amin(np.array([loss1[:3,:], loss1[3:,:]]), axis=0).reshape(-1)) + list(loss2) + list(loss0_1) + list(loss0_2)
+
+    features = nx
+
     xs = np.array([features])
     if not is_configure:
         cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_qa2.pkl'), 'rb'))

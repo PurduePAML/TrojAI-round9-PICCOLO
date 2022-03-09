@@ -534,9 +534,9 @@ def reverse_engineer(model_type, models, benign_models, benign_logits0, benign_e
 
     # delta_init *= 0
     # delta_init -= 8
-    # for j in range(min(3,len(gt_trigger_idxs))):
-    # # for j in range(3):
-    #     delta_init[j,gt_trigger_idxs[j]] = 10
+    # # for j in range(len(gt_trigger_idxs)-3, len(gt_trigger_idxs)):
+    # for j in range(3):
+    #     delta_init[j,gt_trigger_idxs[len(gt_trigger_idxs)-3+j]] = 10
 
     delta = torch.FloatTensor(delta_init).cuda()
     delta.requires_grad = True
@@ -1977,6 +1977,7 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     config['value_bound']           = 0.5
     config['tasks_per_run']         = 1
     config['bloss_weight']          = 1e0
+    # config['bloss_weight']          = 1e1
     config['device']                = device
     config['logfile'] = '{0}/result_r9_1_1_4_1.txt'.format(scratch_dirpath)
 
@@ -2504,19 +2505,20 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
         if True:
         # for base_label in valid_base_labels:
             start_time = time.time()
-            asrs, ces = inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, gt_trigger_idxs, valid_base_labels, base_label, config, benign_models)
-            end_time = time.time()
-            print('base_label', base_label, 'gt_trigger_idxs', gt_trigger_idxs, asrs, ces, 'time', end_time - start_time)
+            # asrs, ces = inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, gt_trigger_idxs, valid_base_labels, base_label, config, benign_models)
+            # end_time = time.time()
+            # print('base_label', base_label, 'gt_trigger_idxs', gt_trigger_idxs, asrs, ces, 'time', end_time - start_time)
             gt_trigger_in_word_idxs = tokenizer.encode('* ' + ' '.join([neutral_words[_] for _ in gt_word_idxs]))[2:-1]
-            asrs, ces = inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, gt_trigger_in_word_idxs, valid_base_labels, base_label, config, benign_models)
+            gt_trigger_in_word_idxs = gt_trigger_in_word_idxs[-2:]
+            asrs, ces = inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, gt_trigger_in_word_idxs, valid_base_labels, base_label, config, benign_models, test_emb=False)
             print('base_label', base_label, 'gt_trigger_in_word_idxs', gt_trigger_in_word_idxs, asrs, ces)
             
-            gt_words = gt_trigger_text.split()
-            gt_words = gt_words
-            start_time = time.time()
-            asrs, ces = inject_word(tokenizer, full_model, original_words_list, original_labels_list, fys, gt_words, valid_base_labels, base_label, config)
-            end_time = time.time()
-            print('base_label', base_label, 'gt words', gt_words, asrs, ces, 'time', end_time - start_time)
+            # gt_words = gt_trigger_text.split()[-3:]
+            # gt_words = gt_words
+            # start_time = time.time()
+            # asrs, ces = inject_word(tokenizer, full_model, original_words_list, original_labels_list, fys, gt_words, valid_base_labels, base_label, config)
+            # end_time = time.time()
+            # print('base_label', base_label, 'gt words', gt_words, asrs, ces, 'time', end_time - start_time)
         sys.exit()
 
 
@@ -2704,8 +2706,25 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     find_triggers = []
     features = [emb_id, ]
     celosses = [[10] for _ in range(3)]
+    nlabel_pairs = len(valid_base_labels) * (len(valid_base_labels)-1)
+    features = np.zeros((16*3*nlabel_pairs+nlabel_pairs*3+len(nasrs0)+len(nces0)))
+    features[-len(nces0):] = nces0
+    features[-len(nces0)-len(nasrs0):-len(nces0)] = nasrs0
+    for i in range(nlabel_pairs*3):
+        features[8+i*16:16+i*16] = 10
+    features[16*3*nlabel_pairs:16*3*nlabel_pairs+nlabel_pairs*3] = 10
+    label_pair_idxs_list = []
     for result in results:
         rdelta, rmask, optz_label, RE_img, RE_mask, RE_delta, samp_label, base_label, acc, trigger_pos, asrs, ces, rdelta_idxs, rdelta_words, ce_loss = result
+
+        base_idx = (base_label-1)//2
+        samp_idx = (samp_label-1)//2
+        if samp_idx > base_idx:
+            samp_idx -= 1
+        label_pair_idx = ( base_idx * (len(valid_base_labels)-1) + samp_idx ) * 3 + trigger_pos
+        print('-'*19, base_label, samp_label, trigger_pos, base_idx, samp_idx, label_pair_idx)
+
+        label_pair_idxs_list.append(label_pair_idx)
 
         reasr = acc
         reasr_per_label = acc
@@ -2750,30 +2769,36 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
         reasr_info.append(['{:.2f}'.format(reasr), '{:.2f}'.format(reasr_per_label), \
                 max_len1_asrs1, max_len2_asrs1, max_len3_asrs1, max_len4_asrs1, max_len1_asrs2, max_len2_asrs2, max_len3_asrs2, max_len4_asrs2, \
                 'mask', str(optz_label), str(samp_label), str(base_label), 'trigger posistion', str(trigger_pos), RE_img, RE_mask, RE_delta, np.sum(rmask), \
-                accs_str, rdelta_words_str, rdelta_idxs_str, len1_idxs_str1, len2_idxs_str1, len3_idxs_str1, len1_idxs_str2, len2_idxs_str2, len3_idxs_str2])
+                accs_str, str(ce_loss), rdelta_words_str, rdelta_idxs_str, len1_idxs_str1, len2_idxs_str1, len3_idxs_str1, len1_idxs_str2, len2_idxs_str2, len3_idxs_str2])
         reasr_per_labels.append(reasr_per_label)
         full_asrs.append(nasrs)
         full_ces.append(nces)
         find_triggers.append(find_trigger)
 
+        features[label_pair_idx*16:label_pair_idx*16+8] = nasrs
+        features[label_pair_idx*16+8:label_pair_idx*16+16] = nces
+        features[16*3*nlabel_pairs+label_pair_idx] = ce_loss
+
         # celosses.append(ce_loss)
-        celosses[trigger_pos].append(ce_loss)
-        print('ce loss', ce_loss)
+        # celosses[trigger_pos].append(ce_loss)
+        # print('ce loss', ce_loss)
 
-    if len(full_asrs) == 0:
-        features += [0 for _ in range(8)]
-        features += [10 for _ in range(8)]
-        features += [10, 10, 10]
-    else:
-        features += list(np.amax(np.array(full_asrs), axis=0))
-        features += list(np.amin(np.array(full_ces), axis=0))
+    features = [emb_id] + list(features)
 
-        features += [np.amin(np.array(celosses[0]))]
-        features += [np.amin(np.array(celosses[1]))]
-        features += [np.amin(np.array(celosses[2]))]
+    # if len(full_asrs) == 0:
+    #     features += [0 for _ in range(8)]
+    #     features += [10 for _ in range(8)]
+    #     features += [10, 10, 10]
+    # else:
+    #     features += list(np.amax(np.array(full_asrs), axis=0))
+    #     features += list(np.amin(np.array(full_ces), axis=0))
 
-    features += list(np.array(nasrs0))
-    features += list(np.array(nces0))
+    #     features += [np.amin(np.array(celosses[0]))]
+    #     features += [np.amin(np.array(celosses[1]))]
+    #     features += [np.amin(np.array(celosses[2]))]
+
+    # features += list(np.array(nasrs0))
+    # features += list(np.array(nces0))
 
     print(len(features), features)
 
@@ -2794,7 +2819,28 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
             f.write('{0} {1} {2} {3} {4} {5} {6} {7} {8}\n'.format(\
                     model_filepath, model_type, 'mode', freasr, freasr_per_label, 'time', sample_end - start, optm_end - sample_end, test_end - optm_end) )
 
+    print('label_pair_idx', label_pair_idxs_list)
+
     output = 0.5
+
+    x = features
+    emb_id = x[0]
+    x = x[1:]
+
+    x = list(x)
+    test_info = np.array(x[:16*3*12]).reshape((12,3,16))
+    test_asrs = np.concatenate([test_info[:,:,:2], test_info[:,:,4:6]], axis=-1)
+    test_ces  = np.concatenate([test_info[:,:,8:10], test_info[:,:,12:14]], axis=-1)
+    test_asrs = np.amax(test_asrs, axis=(0,1))
+    test_ces  = np.amin(test_ces, axis=(0,1))
+
+    opt_ces = np.array(x[16*3*12:16*3*12+12*3])
+
+
+    nx = [emb_id] + list(test_ces.reshape(-1)) + list(opt_ces)[5*3:5*3+2] + list(opt_ces)[3*9:3*9+2]\
+            + [np.max(test_asrs[:2]), np.max(test_asrs[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-16:-8])]
+
+    features = nx
     xs = np.array([features])
     if not is_configure:
         cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_ner0.pkl'), 'rb'))

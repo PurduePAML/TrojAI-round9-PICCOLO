@@ -42,13 +42,14 @@ np.set_printoptions(precision=2)
 import warnings
 
 from abs_pytorch_r9_1_1_4_1_24 import sc_trojan_detector
-from abs_pytorch_r9_1_1_4_2_3_16 import ner_trojan_detector
+# from abs_pytorch_r9_1_1_4_2_3_16 import ner_trojan_detector
+from abs_pytorch_r9_1_1_4_2_11 import ner_trojan_detector
 from abs_pytorch_r9_1_1_4_3_3_8 import qa_trojan_detector
 
 warnings.filterwarnings("ignore")
 
 if not for_submission:
-    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "1"
 
 random_seed = 333
 torch.backends.cudnn.enabled = False
@@ -60,6 +61,8 @@ np.random.seed(random_seed)
 random.seed(random_seed)
 
 def defer_output(output, model_type):
+
+    output = np.clip(output, 0.115, 0.885)
 
     ten_digit = np.floor(output * 10)
 
@@ -467,10 +470,13 @@ def configure(output_parameters_dirpath,
                 if model_config['task_type']  == task_type:
                     if model_config['model_architecture'] == 'roberta-base':
                         benign_names1[2][mname] = model_stats['example_clean_f1']
+                        # benign_names1[2][mname] = model_stats['val_clean_loss']
                     elif model_config['model_architecture'] == 'google/electra-small-discriminator':
                         benign_names1[0][mname] = model_stats['example_clean_f1']
+                        # benign_names1[0][mname] = model_stats['val_clean_loss']
                     elif model_config['model_architecture'] == 'distilbert-base-cased':
                         benign_names1[1][mname] = model_stats['example_clean_f1']
+                        # benign_names1[1][mname] = model_stats['val_clean_loss']
             else:
                 if model_config['task_type']  == task_type:
                     if model_config['model_architecture'] == 'roberta-base':

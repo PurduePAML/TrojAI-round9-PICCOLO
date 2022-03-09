@@ -13,12 +13,14 @@
     "sc_re_epochs": {
       "description": "epochs trigger optimization for sc",
       "type": "integer",
-      "minimum": 2
+      "minimum": 10,
+      "maximum": 1000
     },
     "sc_word_trigger_length": {
       "description": "optimization trigger word length for sc",
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "maximum": 20
     },
     "ner_re_mask_lr": {
       "description": "learning rate of trigger optimization for ner",
@@ -29,12 +31,14 @@
     "ner_re_epochs": {
       "description": "epochs trigger optimization for ner",
       "type": "integer",
-      "minimum": 2
+      "minimum": 10,
+      "maximum": 1000
     },
     "ner_word_trigger_length": {
       "description": "optimization trigger word length for ner",
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "maximum": 20
     },
     "qa_re_mask_lr": {
       "description": "learning rate of trigger optimization for qa",
@@ -45,12 +49,14 @@
     "qa_re_epochs": {
       "description": "epochs trigger optimization for qa",
       "type": "integer",
-      "minimum": 2
+      "minimum": 10,
+      "maximum": 1000
     },
     "qa_word_trigger_length": {
       "description": "optimization trigger word length for qa",
       "type": "integer",
-      "minimum": 1
+      "minimum": 1,
+      "maximum": 20
     }
   }
 }
