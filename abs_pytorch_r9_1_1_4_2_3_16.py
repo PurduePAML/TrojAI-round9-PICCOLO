@@ -19,7 +19,8 @@ import pickle
 import json
 import collections
 import datasets
-np.set_printoptions(precision=2)
+import re
+np.set_printoptions(precision=2, suppress=True)
 
 import copy
 import string
@@ -208,7 +209,7 @@ def manual_tokenize_and_align_labels(tokenizer, original_words, original_labels,
     
     return input_ids, attention_mask, labels, label_mask
 
-def loss_fn(inner_outputs_b, inner_outputs_a, embedding_vector, embedding_signs, logits, benign_logitses, batch_benign_labels, batch_labels, word_delta, use_delta, neuron_mask, label_mask, base_label_mask, wrong_label_mask, acc, e, re_epochs, ctask_batch_size, bloss_weight, epoch_i, samp_labels, emb_id, config):
+def loss_fn(inner_outputs_b, inner_outputs_a, embedding_vector, embedding_signs, logits, plogits, benign_logitses, batch_benign_labels, batch_labels, word_delta, use_delta, neuron_mask, label_mask, base_label_mask, wrong_label_mask, acc, e, re_epochs, ctask_batch_size, bloss_weight, epoch_i, samp_labels, base_labels, emb_id, config, use_ce_loss):
     value_bound         = config['value_bound']
 
     if inner_outputs_a != None and inner_outputs_b != None:
@@ -242,18 +243,27 @@ def loss_fn(inner_outputs_b, inner_outputs_a, embedding_vector, embedding_signs,
     # logits_loss = torch.sum(logits * label_mask) + (-1) * torch.sum(logits * wrong_label_mask)
     # loss = - 2 * logits_loss + mask_add_loss
 
-    target_labels = torch.LongTensor(np.zeros(logits.shape[0]*logits.shape[1])+ samp_labels[0]).cuda()
+    # target_labels = torch.LongTensor(np.zeros(logits.shape[0]*logits.shape[1])+ samp_labels[0]).cuda()
     # print('target_labels', target_labels, logits.shape)
-    ce_loss = - 1e0 * F.nll_loss(F.softmax(logits.reshape([-1, logits.shape[2]]), dim=1),  target_labels)
+
+    target_labels = torch.LongTensor(np.zeros(plogits.shape[0])+ samp_labels[0]).cuda()
+    ce_loss = F.nll_loss(F.log_softmax(plogits, dim=1),  target_labels)
 
     # loss += - 2 * logits_loss
     # loss += - 1e3 * logits_loss
-    loss += - 1e0 * logits_loss
+    if use_ce_loss:
+    # if True:
+        loss += - 1e0 * logits_loss + 1e2 * ce_loss
+        # loss += 1e2 * ce_loss
+    else:
+        loss += - 1e0 * logits_loss
     
     benign_loss = 0
     # for i in range(len(batch_blogits0)):
     for i in range(len(benign_logitses)):
-        benign_loss += F.cross_entropy(benign_logitses[i], batch_benign_labels[i])
+        # benign_loss += F.cross_entropy(benign_logitses[i], batch_benign_labels[i])
+        benign_labels = torch.LongTensor(np.zeros(benign_logitses[i].shape[0])+ base_labels[0]).cuda()
+        benign_loss += F.nll_loss(F.log_softmax(benign_logitses[i], dim=1),  benign_labels)
     # loss += 1e3 * benign_loss
     # loss += 1e2 * benign_loss
     # if epoch_i == 0:
@@ -394,6 +404,11 @@ def init_delta_mask(oimages, max_input_length, word_trigger_length, word_token_l
 
 def reverse_engineer(model_type, models, benign_models, benign_logits0, benign_embeds, benign_poses, benign_attentions, benign_ys, benign_word_labels, embedding_signs_np, children, oimages, oposes, oattns, olabels, oword_labels, weights_file, Troj_Layer, Troj_Neurons, samp_labels, base_labels, re_epochs, num_classes, n_re_imgs_per_label, n_neurons, ctask_batch_size, max_input_length, trigger_pos, end_id, word_trigger_length, use_idxs, random_idxs_split, valid_base_labels, word_token_matrix, emb_id, gt_trigger_idxs, neutral_words, config):
 
+    if re_epochs < 20:
+        use_ce_loss = False
+    else:
+        use_ce_loss = True
+
     re_mask_lr          = config['re_mask_lr']
     re_batch_size       = config['re_batch_size']
     n_re_imgs_per_label = config['n_re_imgs_per_label']
@@ -517,14 +532,11 @@ def reverse_engineer(model_type, models, benign_models, benign_logits0, benign_e
     delta_init *= 0
     delta_init -= 4
 
-    # mask_init *= 0
     # delta_init *= 0
     # delta_init -= 8
-    # delta_init[0,6963] = 10
-    # delta_init[0,6973] = 10
-    # delta_init[0,4316] = 10
-    # delta_init[0,3763] = 10
-    # delta_init[0,629] = 10
+    # for j in range(min(3,len(gt_trigger_idxs))):
+    # # for j in range(3):
+    #     delta_init[j,gt_trigger_idxs[j]] = 10
 
     delta = torch.FloatTensor(delta_init).cuda()
     delta.requires_grad = True
@@ -547,6 +559,7 @@ def reverse_engineer(model_type, models, benign_models, benign_logits0, benign_e
     best_delta = 0
     best_tword_delta = 0
     best_logits_loss = 0
+    best_ce_loss = 10
     last_update = 0
     best_accs = [0]
     last_delta_sum_loss_weight = 0
@@ -697,6 +710,12 @@ def reverse_engineer(model_type, models, benign_models, benign_logits0, benign_e
 
             logits = logits * torch.unsqueeze(batch_base_word_mask,-1)
 
+            plogits = []
+            for k in range(logits.shape[0]):
+                for j in range(logits.shape[1]):
+                    if batch_base_word_mask[k,j] == 1:
+                        plogits.append(logits[k,j])
+            plogits = torch.stack(plogits)
 #             print(torch.argmax(logits[0],dim=1))
 #             print(logits[0][22])
 #             print(logits[0][23])
@@ -717,7 +736,7 @@ def reverse_engineer(model_type, models, benign_models, benign_logits0, benign_e
 
             flogits.append(logits_np)
             loss, vloss1, vloss2, vloss3, relu_loss1, relu_loss2, logits_loss, benign_loss, bloss_weight, delta_sum_loss_weight, ce_loss\
-                    = loss_fn(inner_outputs_b, inner_outputs_a, embedding_vector2, embedding_signs, logits, benign_logitses, batch_benign_labels, batch_labels, word_delta, use_delta, neuron_mask, batch_label_mask, batch_base_label_mask, batch_wrong_label_mask, facc, e, re_epochs, ctask_batch_size, bloss_weight, i, samp_labels, emb_id, config)
+                    = loss_fn(inner_outputs_b, inner_outputs_a, embedding_vector2, embedding_signs, logits, plogits, benign_logitses, batch_benign_labels, batch_labels, word_delta, use_delta, neuron_mask, batch_label_mask, batch_base_label_mask, batch_wrong_label_mask, facc, e, re_epochs, ctask_batch_size, bloss_weight, i, samp_labels, base_labels, emb_id, config, use_ce_loss=use_ce_loss)
             if e > 0:
                 loss.backward(retain_graph=True)
                 optimizer.step()
@@ -730,16 +749,16 @@ def reverse_engineer(model_type, models, benign_models, benign_logits0, benign_e
         fpreds = np.argmax(flogits, axis=2)
 
         preds = []
-        plogits = []
+        plogits_np = []
         original_labels = []
         for k in range(fpreds.shape[0]):
             for j in range(fpreds.shape[1]):
                 if obase_word_mask[k,j] == 1:
                     preds.append(fpreds[k,j])
-                    plogits.append(flogits[k,j])
+                    plogits_np.append(flogits[k,j])
                     original_labels.append(oword_labels[k,j])
         preds = np.array(preds)
-        plogits = np.array(plogits)
+        plogits_np = np.array(plogits_np)
 
         # print(fpreds[:5])
         # print(preds)
@@ -850,6 +869,7 @@ def reverse_engineer(model_type, models, benign_models, benign_logits0, benign_e
             best_delta = use_delta.cpu().detach().numpy()
             best_word_delta = word_delta.cpu().detach().numpy()
             best_logits_loss = logits_loss.cpu().detach().numpy()
+            best_ce_loss = ce_loss.cpu().detach().numpy()
             best_accs = faccs
             last_update = e
 
@@ -862,7 +882,8 @@ def reverse_engineer(model_type, models, benign_models, benign_logits0, benign_e
             print('epoch time', epoch_end_time - epoch_start_time)
             print(e, 'trigger_pos', trigger_pos, 'loss', loss.cpu().detach().numpy(), 'acc', faccs, 'base_labels', base_labels, 'sampling label', samp_labels,\
                     'optz label', optz_labels, 'use labels', use_labels,'wrong labels', wrong_labels,\
-                    'logits_loss', logits_loss.cpu().detach().numpy(), 'benign_loss', benign_loss, 'bloss_weight', bloss_weight, 'delta_sum_loss_weight', delta_sum_loss_weight)
+                    'logits_loss', logits_loss.cpu().detach().numpy(), 'ce loss', ce_loss.cpu().detach().numpy(),\
+                    'benign_loss', benign_loss, 'bloss_weight', bloss_weight, 'delta_sum_loss_weight', delta_sum_loss_weight)
             if inner_outputs_a != None and inner_outputs_b != None:
                 print('vloss1', vloss1.cpu().detach().numpy(), 'vloss2', vloss2.cpu().detach().numpy(),\
                     'relu_loss1', relu_loss1.cpu().detach().numpy(), 'max relu_loss1', np.amax(inner_outputs_a.cpu().detach().numpy()),\
@@ -915,9 +936,9 @@ def reverse_engineer(model_type, models, benign_models, benign_logits0, benign_e
         handle.remove()
 
     # return faccs, delta, word_delta, mask, optz_labels, logits_loss.cpu().detach().numpy() 
-    return faccs, delta, word_delta, mask, optz_labels, logits_loss.cpu().detach().numpy(), logits_loss.cpu().detach().numpy() -base_logits_loss, ce_loss.cpu().detach().numpy(), ce_loss.cpu().detach().numpy() -base_ce_loss
+    return faccs, delta, word_delta, mask, optz_labels, logits_loss.cpu().detach().numpy(), logits_loss.cpu().detach().numpy() -base_logits_loss, ce_loss.cpu().detach().numpy(), base_ce_loss - ce_loss.cpu().detach().numpy()
 
-def re_mask(model_type, models, benign_models, benign_logits0, benign_embeds, benign_poses, benign_attentions, benign_ys, benign_word_labels, embedding_signs, neuron_dict, children, embeds, poses_emb_vector, input_ids, attention_mask, labels, word_labels, original_words_list, original_labels_list, fys, n_neurons_dict, scratch_dirpath, re_epochs, num_classes, n_re_imgs_per_label, max_input_length, end_id, valid_base_labels, token_neighbours_dict, token_word_dict, word_token_dict, word_token_matrix, word_use_idxs, token_use_idxs, emb_id, max_nchecks, gt_trigger_idxs, neutral_words, use_idxs, config, for_submission):
+def re_mask(model_type, models, benign_models, benign_logits0, benign_embeds, benign_poses, benign_attentions, benign_ys, benign_word_labels, embedding_signs, neuron_dict, children, embeds, poses_emb_vector, input_ids, attention_mask, labels, word_labels, original_words_list, original_labels_list, fys, n_neurons_dict, scratch_dirpath, re_epochs, num_classes, n_re_imgs_per_label, max_input_length, end_id, valid_base_labels, token_neighbours_dict, token_word_dict, word_token_dict, word_token_matrix, word_use_idxs, token_use_idxs, emb_id, max_nchecks, gt_trigger_idxs, neutral_words, use_idxs, config, for_submission, test_inputs, test_attentions, test_word_labels):
 
     re_mask_lr          = config['re_mask_lr']
     re_epochs           = config['re_epochs']
@@ -992,7 +1013,7 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_embeds, be
             # n_neurons = n_neurons_dict[tTroj_Layers[0]]
             n_neurons = 0
             
-            # trigger_poses = [1]
+            # trigger_poses = [2]
             # trigger_poses = [0]
             trigger_poses = [0,1,2]
             for tp_i, trigger_pos in enumerate(trigger_poses):
@@ -1007,11 +1028,10 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_embeds, be
                 torch.cuda.empty_cache()
 
                 k_arm_results.append([tbase_labels[0], tsamp_labels[0], trigger_pos, logits_loss, logits_loss_diff, ce_loss, ce_loss_diff])
+                # k_arm_results.append([tbase_labels[0], tsamp_labels[0], trigger_pos, logits_loss, logits_loss_diff,])
 
-        if emb_id == 3:
-            sorted_k_arm_results = sorted(k_arm_results, key=lambda x: x[3])[::-1]
-        else:
-            sorted_k_arm_results = sorted(k_arm_results, key=lambda x: x[4])[::-1]
+        sorted_k_arm_results = sorted(k_arm_results, key=lambda x: x[4])[::-1]
+        # sorted_k_arm_results = sorted(k_arm_results, key=lambda x: x[6])
         top_k_arm_results = sorted_k_arm_results[0]
 
         print('top_k_arm_results', top_k_arm_results)
@@ -1059,7 +1079,8 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_embeds, be
 
         print('final_top_k_arm_results', final_top_k_arm_results)
 
-        max_nchecks = 24
+        # max_nchecks = 33
+        max_nchecks = 18
         final_top_k_arm_results = final_top_k_arm_results[:max_nchecks]
 
         print('final_top_k_arm_results', final_top_k_arm_results)
@@ -1092,11 +1113,8 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_embeds, be
                 RE_delta   = RE_deltas[task_i * task_batch_size + task_j]
 
                 if acc >= reasr_bound:
-                    if trigger_pos == 0:
-                        asrs, rdelta_idxs, rdelta_words, = test_trigger_pos0(model_type, models, rword_delta, rword_delta, token_use_idxs, input_ids, attention_mask, word_labels, original_words_list, original_labels_list, fys, valid_base_labels, base_label, token_neighbours_dict, token_word_dict, word_token_dict, neutral_words, config)
-                    else:
-                        asrs, rdelta_idxs, rdelta_words, = test_trigger_pos1(model_type, models, rword_delta, rword_delta, token_use_idxs, input_ids, attention_mask, word_labels, original_words_list, original_labels_list, fys, valid_base_labels, base_label, token_neighbours_dict, token_word_dict, word_token_dict, neutral_words, config)
-                    final_result = (rdelta, rmask, optz_label, RE_img, RE_mask, RE_delta, samp_label, base_label, acc, trigger_pos, asrs, rdelta_idxs, rdelta_words)
+                    asrs, ces, rdelta_idxs, rdelta_words, = test_trigger_pos1(model_type, models, rword_delta, token_use_idxs, test_inputs, test_attentions, test_word_labels, original_words_list, original_labels_list, fys, valid_base_labels, base_label, token_neighbours_dict, token_word_dict, word_token_dict, neutral_words, config, benign_models)
+                    final_result = (rdelta, rmask, optz_label, RE_img, RE_mask, RE_delta, samp_label, base_label, acc, trigger_pos, asrs, ces, rdelta_idxs, rdelta_words, ce_loss)
                     validated_results.append( final_result )
                     asrs = np.array(asrs)
                     find_trigger = False
@@ -1106,7 +1124,8 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_embeds, be
 
         return validated_results
 
-def test_trigger_pos0(model_type, models, rdelta, rword_delta, use_idxs, input_ids, attention_mask, word_labels, original_words_list, original_labels_list, fys, valid_base_labels, base_label, token_neighbours_dict, token_word_dict, word_token_dict, neutral_words, config):
+
+def test_trigger_pos1(model_type, models, rword_delta, use_idxs, input_ids, attention_mask, word_labels, original_words_list, original_labels_list, fys, valid_base_labels, base_label, token_neighbours_dict, token_word_dict, word_token_dict, neutral_words, config, benign_models):
     model, full_model, embedding, tokenizer = models[:4]
 
     re_mask_lr          = config['re_mask_lr']
@@ -1123,21 +1142,19 @@ def test_trigger_pos0(model_type, models, rdelta, rword_delta, use_idxs, input_i
     device              = config['device']
 
     top_k_candidates0 = top_k_candidates
+
+    print('rword delta', rword_delta.shape)
+    # sys.exit()
+
     rdelta_idxs = []
     test_one_start = time.time()
-    for j in range(rdelta.shape[1]):
-        rdelta_argsort0 = np.argsort(rdelta[0][j])[::-1]
-        rdelta_argsort = []
-        for r_i in rdelta_argsort0:
-            # if r_i in use_idxs:
-            if True:
-                rdelta_argsort.append(r_i)
-            if len(rdelta_argsort) > top_k_candidates0 :
-                break
+    for j in range(rword_delta.shape[1]):
+        rdelta_argsort = np.argsort(rword_delta[0][j])[::-1]
         for k in range(top_k_candidates0):
             rdelta_idxs.append( rdelta_argsort[k] )
     test_one_end = time.time()
     print('test get word time', test_one_end - test_one_start)
+    print('rdelta_idxs', len(rdelta_idxs), rdelta_idxs)
 
     token_rdelta_idxs = []
     for idx in rdelta_idxs:
@@ -1164,13 +1181,44 @@ def test_trigger_pos0(model_type, models, rdelta, rword_delta, use_idxs, input_i
 
     rdelta_idxs = sorted(list(set(rdelta_idxs)), key=lambda x: len(x))
 
-    print('rdelta_idxs', len(rdelta_idxs), rdelta_idxs)
+    print('token rdelta_idxs', len(rdelta_idxs), rdelta_idxs)
+
+    rword_words = []
+    for j in range(rword_delta.shape[1]):
+        rdelta_argsort = np.argsort(rword_delta[0][j])[::-1]
+        for k in range(top_k_candidates):
+            rword_words.append( neutral_words[rdelta_argsort[k]] )
+    test_one_end = time.time()
+    print('test get word time', test_one_end - test_one_start)
+    print('rword_words', rword_words)
+
+    return test_token_word(model_type, models, rdelta_idxs, rword_words, use_idxs, input_ids, attention_mask, word_labels, original_words_list, original_labels_list, fys, valid_base_labels, base_label, config, benign_models)
+
+def test_token_word(model_type, models, rdelta_idxs, rword_words, use_idxs, input_ids, attention_mask, word_labels, original_words_list, original_labels_list, fys, valid_base_labels, base_label, config, benign_models, test_emb=False):
+    model, full_model, embedding, tokenizer = models[:4]
+
+    re_mask_lr          = config['re_mask_lr']
+    re_epochs           = config['re_epochs']
+    word_trigger_length = config['word_trigger_length']
+    re_batch_size       = config['re_batch_size']
+    n_re_imgs_per_label = config['n_re_imgs_per_label']
+    n_max_imgs_per_label= config['n_max_imgs_per_label']
+    max_input_length    = config['max_input_length']
+    top_k_candidates    = config['top_k_candidates']
+    value_bound         = config['value_bound']
+    reasr_bound         = config['reasr_bound']
+    tasks_per_run       = config['tasks_per_run']
+    device              = config['device']
+
+    top_k_candidates0 = top_k_candidates
 
     crdelta_idxs = []
     for _ in rdelta_idxs:
         crdelta_idxs += list(_)
 
     rdelta_words = tokenizer.convert_ids_to_tokens( crdelta_idxs )
+
+    input_ids = input_ids.cpu()
 
     max_len1_asrs1 = 0
     max_len1_asrs2 = 0
@@ -1178,109 +1226,125 @@ def test_trigger_pos0(model_type, models, rdelta, rword_delta, use_idxs, input_i
     max_len2_asrs2 = 0
     max_len3_asrs1 = 0
     max_len3_asrs2 = 0
+    max_len4_asrs1 = 0
+    max_len4_asrs2 = 0
 
-    len4_asrs1 = []
-    len4_asrs2 = []
+    min_len1_ces1 = 10
+    min_len1_ces2 = 10
+    min_len2_ces1 = 10
+    min_len2_ces2 = 10
+    min_len3_ces1 = 10
+    min_len3_ces2 = 10
+    min_len4_ces1 = 10
+    min_len4_ces2 = 10
 
-    tcands1 = []
-    for idx_pair in rdelta_idxs:
-        tcands1 += list(idx_pair)
-    print('tcands1', len(tcands1), tcands1)
-    for i in range(math.ceil(len(tcands1)//70)):
-        asrs = inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, tcands1[i*70:(i+1)*70], valid_base_labels, base_label, config)
-        len4_asrs1.append(max(asrs[0]))
-        len4_asrs2.append(max(asrs[1]))
+    stime1 = time.time()
+    rcount1 = 0
+    if True:
+    # if False:
+        len1_asrs1 = []
+        len1_asrs2 = []
+        len1_ces1 = []
+        len1_ces2 = []
 
-    rword_words = []
-    for j in range(rword_delta.shape[1]):
-        rdelta_argsort = np.argsort(rword_delta[0][j])[::-1]
-        for k in range(top_k_candidates0):
-            rword_words.append( neutral_words[rdelta_argsort[k]] )
-    test_one_end = time.time()
-    print('test get word time', test_one_end - test_one_start)
-    print('rword_words', rword_words)
+        for idx in rdelta_idxs:
+            trigger_idxs = idx
+            asrs, ces = inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, trigger_idxs, valid_base_labels, base_label, config, benign_models, test_emb)
+            rcount1 += 1
+            len1_asrs1.append(max(asrs[0]))
+            len1_asrs2.append(max(asrs[1]))
+            len1_ces1.append(min(ces[0]))
+            len1_ces2.append(min(ces[1]))
 
-    asrs = inject_word(tokenizer, full_model, original_words_list, original_labels_list, fys, rword_words, valid_base_labels, base_label, config)
-    len4_asrs1.append(max(asrs[0]))
-    len4_asrs2.append(max(asrs[1]))
+        len1_asrs1 = np.array(len1_asrs1)
+        print('max len1 asrs1', np.amax(len1_asrs1), rdelta_idxs[np.argmax(len1_asrs1)], np.sort(len1_asrs1))
+        print('min len1 ces1', np.amin(len1_ces1), rdelta_idxs[np.argmin(len1_ces1)], np.sort(len1_ces1))
+        max_len1_asrs1 = np.amax(len1_asrs1)
 
-    len4_asrs1 = np.array(len4_asrs1)
-    max_len4_asrs1 = np.amax(len4_asrs1)
-    len4_asrs2 = np.array(len4_asrs2)
-    max_len4_asrs2 = np.amax(len4_asrs2)
+        len1_asrs2 = np.array(len1_asrs2)
+        print('max len1 asrs2', np.amax(len1_asrs2), rdelta_idxs[np.argmax(len1_asrs2)], np.sort(len1_asrs2))
+        print('min len1 ces2', np.amin(len1_ces2), rdelta_idxs[np.argmin(len1_ces2)], np.sort(len1_ces2))
+        max_len1_asrs2 = np.amax(len1_asrs2)
 
-    asrs = [[max_len1_asrs1, max_len2_asrs1, max_len3_asrs1, max_len4_asrs1, ], [max_len1_asrs2, max_len2_asrs2, max_len3_asrs2, max_len4_asrs2, ]]
+        min_len1_ces1 = np.amin(len1_ces1)
+        min_len1_ces2 = np.amin(len1_ces2)
 
-    return asrs, rdelta_idxs, rdelta_words
+        cands1 = []
+        cands2 = []
+        cands = []
+        for i in range(len(len1_asrs1)):
+            if len1_asrs1[i] < 0 or len1_asrs2[i] < 0:
+                continue
+            if len1_asrs1[i] > 0.3 or len1_ces1[i] < 7 and not test_emb:
+                cands1.append(rdelta_idxs[i])
+                if rdelta_idxs[i] not in cands:
+                    cands.append(rdelta_idxs[i])
+        for i in range(len(len1_asrs2)):
+            if len1_asrs1[i] < 0 or len1_asrs2[i] < 0:
+                continue
+            if len1_asrs2[i] > 0.3 or len1_ces2[i] < 7 and not test_emb:
+                cands2.append(rdelta_idxs[i])
+                if rdelta_idxs[i] not in cands:
+                    cands.append(rdelta_idxs[i])
 
+        if len(cands) > 0:
+        # if False:
+            width = 2
+            # topks = list(np.array(rdelta_idxs)[np.argsort(len1_asrs1)[-width:]])
+            # topks += list(np.array(rdelta_idxs)[np.argsort(len1_asrs2)[-width:]])
+            topks = list(np.array(rdelta_idxs)[np.argsort(len1_ces1)[:width]])
+            topks += list(np.array(rdelta_idxs)[np.argsort(len1_ces2)[:width]])
+            topks = [tuple(_) for _ in topks]
+            topks = sorted(list(set(topks)))
+            print('topks', topks)
+            print('cands', cands)
+            len2_asrs1 = []
+            len2_asrs2 = []
+            len2_ces1 = []
+            len2_ces2 = []
+            len2_idxs = []
+            for i in range(len(topks)):
+                for j in range(len(cands)):
+                    for k in range(2):
+                    # for k in range(1):
+                        if k == 0:
+                            trigger_idxs = tuple(list(topks[i]) + list(cands[j]))
+                        else:
+                            trigger_idxs = tuple(list(cands[j]) + list(topks[i]))
+                        print('trigger_idxs', trigger_idxs,'k', k)
+                        # asrs, ces = inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, trigger_idxs, valid_base_labels, base_label, config, benign_models)
+                        asrs, ces = inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, trigger_idxs, valid_base_labels, base_label, config, [], test_emb)
+                        rcount1 += 1
+                        len2_asrs1.append(max(asrs[0]))
+                        len2_asrs2.append(max(asrs[1]))
+                        len2_idxs.append(trigger_idxs)
 
-def test_trigger_pos1(model_type, models, rdelta, rword_delta, use_idxs, input_ids, attention_mask, word_labels, original_words_list, original_labels_list, fys, valid_base_labels, base_label, token_neighbours_dict, token_word_dict, word_token_dict, neutral_words, config):
-    model, full_model, embedding, tokenizer = models[:4]
+                        len2_ces1.append(min(ces[0]))
+                        len2_ces2.append(min(ces[1]))
+            
+            len2_asrs1 = np.array(len2_asrs1)
+            print('max len2 asrs1', np.amax(len2_asrs1), tokenizer.convert_ids_to_tokens(len2_idxs[np.argmax(len2_asrs1)]) )
+            max_len2_asrs1 = np.amax(len2_asrs1)
+            max_len2_idxs1 = len2_idxs[np.argmax(len2_asrs1)]
+            
+            len2_asrs2 = np.array(len2_asrs2)
+            print('max len2 asrs2', np.amax(len2_asrs2), tokenizer.convert_ids_to_tokens(len2_idxs[np.argmax(len2_asrs2)]) )
+            max_len2_asrs2 = np.amax(len2_asrs2)
+            max_len2_idxs2 = len2_idxs[np.argmax(len2_asrs2)]
 
-    re_mask_lr          = config['re_mask_lr']
-    re_epochs           = config['re_epochs']
-    word_trigger_length = config['word_trigger_length']
-    re_batch_size       = config['re_batch_size']
-    n_re_imgs_per_label = config['n_re_imgs_per_label']
-    n_max_imgs_per_label= config['n_max_imgs_per_label']
-    max_input_length    = config['max_input_length']
-    top_k_candidates    = config['top_k_candidates']
-    value_bound         = config['value_bound']
-    reasr_bound         = config['reasr_bound']
-    tasks_per_run       = config['tasks_per_run']
-    device              = config['device']
+            min_len2_ces1 = np.amin(len2_ces1)
+            min_len2_ces2 = np.amin(len2_ces2)
 
-    top_k_candidates0 = top_k_candidates
+    etime1 = time.time()
 
-    rdelta_idxs = []
-    test_one_start = time.time()
-    for j in range(rdelta.shape[1]):
-        rdelta_argsort0 = np.argsort(rdelta[0][j])[::-1]
-        rdelta_argsort = []
-        for r_i in rdelta_argsort0:
-            # if r_i in use_idxs:
-            if True:
-                rdelta_argsort.append(r_i)
-            if len(rdelta_argsort) > top_k_candidates0 :
-                break
-        for k in range(top_k_candidates0):
-            rdelta_idxs.append( rdelta_argsort[k] )
-    test_one_end = time.time()
-    print('test get word time', test_one_end - test_one_start)
+    asrs1 = [[max_len1_asrs1, max_len2_asrs1, max_len3_asrs1, max_len4_asrs1, ], [max_len1_asrs2, max_len2_asrs2, max_len3_asrs2, max_len4_asrs2, ]]
 
-    token_rdelta_idxs = []
-    for idx in rdelta_idxs:
-        # for j in range(word_token_matrix0.shape[1]):
-            # token_rdelta_idxs.append(word_token_matrix0[idx, j])
+    ces1 = [[min_len1_ces1, min_len2_ces1, min_len3_ces1, min_len4_ces1, ], [ min_len1_ces2, min_len2_ces2, min_len3_ces2, min_len4_ces2, ]]
 
-        if model_type.startswith('Electra') or model_type.startswith('Distil') :
-            tresults = tokenizer(neutral_words[idx], max_length=20, padding="max_length", truncation=True, return_tensors="pt")
-            tinput_ids = tresults.data['input_ids'][0].cpu().detach().numpy()
-            trigger_ids = []
-            for i in range(len(tinput_ids)):
-                if tinput_ids[i] not in [0,100,101,102,103]:
-                    trigger_ids.append(tinput_ids[i])
-        else:
-            tresults = tokenizer('a '+ neutral_words[idx], max_length=20, padding="max_length", truncation=True, return_tensors="pt")
-            tinput_ids = tresults.data['input_ids'][0].cpu().detach().numpy()
-            trigger_ids = []
-            for i in range(2,len(tinput_ids)):
-                if tinput_ids[i] not in [50264, 50260, 0, 1, 2, 3]:
-                    trigger_ids.append(tinput_ids[i])
-        token_rdelta_idxs.append(tuple(trigger_ids))
-
-    rdelta_idxs = token_rdelta_idxs
-
-    rdelta_idxs = sorted(list(set(rdelta_idxs)), key=lambda x: len(x))
-
-    print('rdelta_idxs', len(rdelta_idxs), rdelta_idxs)
-
-    crdelta_idxs = []
-    for _ in rdelta_idxs:
-        crdelta_idxs += list(_)
-
-    rdelta_words = tokenizer.convert_ids_to_tokens( crdelta_idxs )
-
+    max_len1_asrs1 = 0
+    max_len1_idxs1 = []
+    max_len1_asrs2 = 0
+    max_len1_idxs2 = []
     max_len2_asrs1 = 0
     max_len2_idxs1 = []
     max_len2_asrs2 = 0
@@ -1292,161 +1356,130 @@ def test_trigger_pos1(model_type, models, rdelta, rword_delta, use_idxs, input_i
     max_len4_asrs1 = 0
     max_len4_asrs2 = 0
 
-    len1_asrs1 = []
-    len1_asrs2 = []
+    min_len1_ces1 = 10
+    min_len1_ces2 = 10
+    min_len2_ces1 = 10
+    min_len2_ces2 = 10
+    min_len3_ces1 = 10
+    min_len3_ces2 = 10
+    min_len4_ces1 = 10
+    min_len4_ces2 = 10
 
-    for idx in rdelta_idxs:
-        trigger_idxs = idx
-        asrs = inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, trigger_idxs, valid_base_labels, base_label, config)
-        len1_asrs1.append(max(asrs[0]))
-        len1_asrs2.append(max(asrs[1]))
+    rcount2 = 0
+    stime2 = time.time()
+    if False:
+    # if True:
+        len1_asrs1 = []
+        len1_asrs2 = []
+        len1_ces1 = []
+        len1_ces2 = []
+        for word in rword_words:
+            trigger_words = [word]
+            asrs, ces = inject_word(tokenizer, full_model, original_words_list, original_labels_list, fys, trigger_words, valid_base_labels, base_label, config)
+            rcount2 += 1
+            len1_asrs1.append(max(asrs[0]))
+            len1_asrs2.append(max(asrs[1]))
+            len1_ces1.append(min(ces[0]))
+            len1_ces2.append(min(ces[1]))
 
-    len1_asrs1 = np.array(len1_asrs1)
-    max_len1_idxs1 = [rdelta_idxs[np.argmax(len1_asrs1)]]
-    print('max len1 asrs1', np.amax(len1_asrs1), rdelta_idxs[np.argmax(len1_asrs1)])
-    max_len1_asrs1 = np.amax(len1_asrs1)
+        len1_asrs1 = np.array(len1_asrs1)
+        max_len1_asrs1 = np.amax(len1_asrs1)
 
-    len1_asrs2 = np.array(len1_asrs2)
-    max_len1_idxs2 = [rdelta_idxs[np.argmax(len1_asrs2)]]
-    print('max len1 asrs2', np.amax(len1_asrs2), rdelta_idxs[np.argmax(len1_asrs2)])
-    max_len1_asrs2 = np.amax(len1_asrs2)
+        print('max len1 asrs2', np.amax(len1_asrs2), rword_words[np.argmax(len1_asrs2)])
+        max_len1_asrs2 = np.amax(len1_asrs2)
 
-    cands1 = []
-    cands2 = []
-    cands = []
-    for i in range(len(len1_asrs1)):
-        if len1_asrs1[i] > 0.3:
-            cands1.append(rdelta_idxs[i])
-            if rdelta_idxs[i] not in cands:
-                cands.append(rdelta_idxs[i])
-    for i in range(len(len1_asrs2)):
-        if len1_asrs2[i] > 0.3:
-            cands2.append(rdelta_idxs[i])
-            if rdelta_idxs[i] not in cands:
-                cands.append(rdelta_idxs[i])
+        min_len1_ces1 = np.amin(len1_ces1)
+        min_len1_ces2 = np.amin(len1_ces2)
 
-    if len(cands) > 0:
-    # if False:
-        width = 2
-        topks = list(np.array(rdelta_idxs)[np.argsort(len1_asrs1)[-width:]])
-        topks += list(np.array(rdelta_idxs)[np.argsort(len1_asrs2)[-width:]])
-        topks = [tuple(_) for _ in topks]
-        topks = sorted(list(set(topks)))
-        print('topks', topks)
+        cands1 = []
+        cands2 = []
+        cands = []
+        for i in range(len(len1_asrs1)):
+            if len1_asrs1[i] > 0.3 or len1_ces1[i] < 6 and not test_emb:
+                cands1.append(rword_words[i])
+                if rword_words[i] not in cands:
+                    cands.append(rword_words[i])
+        for i in range(len(len1_asrs2)):
+            if len1_asrs2[i] > 0.3 or len1_ces2[i] < 6 and not test_emb:
+                cands2.append(rword_words[i])
+                if rword_words[i] not in cands:
+                    cands.append(rword_words[i])
+
         print('cands', cands)
-        len2_asrs1 = []
-        len2_asrs2 = []
-        len2_idxs = []
-        for i in range(len(topks)):
-            for j in range(len(cands)):
-                # for k in range(2):
-                for k in range(1):
-                    if k == 0:
-                        trigger_idxs = tuple(list(topks[i]) + list(cands[j]))
-                    else:
-                        trigger_idxs = tuple(list(cands[j]) + list(topks[i]))
-                    print('trigger_idxs', trigger_idxs,'k', k)
-                    asrs = inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, trigger_idxs, valid_base_labels, base_label, config)
-                    len2_asrs1.append(max(asrs[0]))
-                    len2_asrs2.append(max(asrs[1]))
-                    len2_idxs.append(trigger_idxs)
-        
-        len2_asrs1 = np.array(len2_asrs1)
-        print('max len2 asrs1', np.amax(len2_asrs1), tokenizer.convert_ids_to_tokens(len2_idxs[np.argmax(len2_asrs1)]) )
-        max_len2_asrs1 = np.amax(len2_asrs1)
-        max_len2_idxs1 = len2_idxs[np.argmax(len2_asrs1)]
-        
-        len2_asrs2 = np.array(len2_asrs2)
-        print('max len2 asrs2', np.amax(len2_asrs2), tokenizer.convert_ids_to_tokens(len2_idxs[np.argmax(len2_asrs2)]) )
-        max_len2_asrs2 = np.amax(len2_asrs2)
-        max_len2_idxs2 = len2_idxs[np.argmax(len2_asrs2)]
 
-    asrs1 = [[max_len1_asrs1, max_len2_asrs1, max_len3_asrs1, max_len4_asrs1, ], [max_len1_asrs2, max_len2_asrs2, max_len3_asrs2, max_len4_asrs2, ]]
+        if len(cands) > 0:
+        # if False:
+            width = 2
+            topks = []
+            for i in np.argsort(len1_asrs1)[-width:]:
+                topks.append(rword_words[i])
+            for i in np.argsort(len1_asrs2)[-width:]:
+                topks.append(rword_words[i])
+            topks = sorted(list(set(topks)))
+            print('topks', topks)
+            print('cands', cands)
+            len2_asrs1 = []
+            len2_asrs2 = []
+            len2_ces1 = []
+            len2_ces2 = []
+            len2_idxs = []
+            for i in range(len(topks)):
+                for j in range(len(cands)):
+                    for k in range(2):
+                    # for k in range(1):
+                        if k == 0:
+                            trigger_words = list([topks[i]]) + list([cands[j]])
+                        else:
+                            trigger_words = list([cands[j]]) + list([topks[i]])
+                        print('trigger_words', trigger_words, 'k', k)
+                        asrs, ces = inject_word(tokenizer, full_model, original_words_list, original_labels_list, fys, trigger_words, valid_base_labels, base_label, config)
+                        rcount2 += 1
+                        len2_asrs1.append(max(asrs[0]))
+                        len2_asrs2.append(max(asrs[1]))
+                        len2_idxs.append(trigger_words)
 
-    rword_words = []
-    for j in range(rword_delta.shape[1]):
-        rdelta_argsort = np.argsort(rword_delta[0][j])[::-1]
-        for k in range(top_k_candidates):
-            rword_words.append( neutral_words[rdelta_argsort[k]] )
-    test_one_end = time.time()
-    print('test get word time', test_one_end - test_one_start)
-    print('rword_words', rword_words)
+                        len2_ces1.append(min(ces[0]))
+                        len2_ces2.append(min(ces[1]))
+            
+            len2_asrs1 = np.array(len2_asrs1)
+            print('max len2 asrs1', np.amax(len2_asrs1), len2_idxs[np.argmax(len2_asrs1)] )
+            max_len2_asrs1 = np.amax(len2_asrs1)
+            max_len2_idxs1 = len2_idxs[np.argmax(len2_asrs1)]
+            
+            len2_asrs2 = np.array(len2_asrs2)
+            print('max len2 asrs2', np.amax(len2_asrs2), len2_idxs[np.argmax(len2_asrs2)] )
+            max_len2_asrs2 = np.amax(len2_asrs2)
+            max_len2_idxs2 = len2_idxs[np.argmax(len2_asrs2)]
 
-    len1_asrs1 = []
-    len1_asrs2 = []
-    for word in rword_words:
-        trigger_words = [word]
-        asrs = inject_word(tokenizer, full_model, original_words_list, original_labels_list, fys, trigger_words, valid_base_labels, base_label, config)
-        len1_asrs1.append(max(asrs[0]))
-        len1_asrs2.append(max(asrs[1]))
+            min_len2_ces1 = np.amin(len2_ces1)
+            min_len2_ces2 = np.amin(len2_ces2)
+    etime2 = time.time()
 
-    len1_asrs1 = np.array(len1_asrs1)
-    max_len1_asrs1 = np.amax(len1_asrs1)
-
-    print('max len1 asrs2', np.amax(len1_asrs2), rword_words[np.argmax(len1_asrs2)])
-    max_len1_asrs2 = np.amax(len1_asrs2)
-
-    cands1 = []
-    cands2 = []
-    cands = []
-    for i in range(len(len1_asrs1)):
-        if len1_asrs1[i] > 0.3:
-            cands1.append(rword_words[i])
-            if rword_words[i] not in cands:
-                cands.append(rword_words[i])
-    for i in range(len(len1_asrs2)):
-        if len1_asrs2[i] > 0.3:
-            cands2.append(rword_words[i])
-            if rword_words[i] not in cands:
-                cands.append(rword_words[i])
-
-    print('cands', cands)
-
-    if len(cands) > 0:
-    # if False:
-        width = 2
-        topks = []
-        for i in np.argsort(len1_asrs1)[-width:]:
-            topks.append(rword_words[i])
-        for i in np.argsort(len1_asrs2)[-width:]:
-            topks.append(rword_words[i])
-        topks = sorted(list(set(topks)))
-        print('topks', topks)
-        print('cands', cands)
-        len2_asrs1 = []
-        len2_asrs2 = []
-        len2_idxs = []
-        for i in range(len(topks)):
-            for j in range(len(cands)):
-                # for k in range(2):
-                for k in range(1):
-                    if k == 0:
-                        trigger_words = list([topks[i]]) + list([cands[j]])
-                    else:
-                        trigger_words = list([cands[j]]) + list([topks[i]])
-                    print('trigger_words', trigger_words, 'k', k)
-                    asrs = inject_word(tokenizer, full_model, original_words_list, original_labels_list, fys, trigger_words, valid_base_labels, base_label, config)
-                    len2_asrs1.append(max(asrs[0]))
-                    len2_asrs2.append(max(asrs[1]))
-                    len2_idxs.append(trigger_idxs)
-        
-        len2_asrs1 = np.array(len2_asrs1)
-        max_len2_idxs1 = len2_idxs[np.argmax(len2_asrs1)]
-        
-        len2_asrs2 = np.array(len2_asrs2)
-        max_len2_idxs2 = len2_idxs[np.argmax(len2_asrs2)]
+    print('test time', etime1 - stime1, etime2 - stime2, rcount1, rcount2)
+    # sys.exit()
 
     asrs2 = [[max_len1_asrs1, max_len2_asrs1, max_len3_asrs1, max_len4_asrs1, ], [max_len1_asrs2, max_len2_asrs2, max_len3_asrs2, max_len4_asrs2, ]]
+
+    ces2 = [[min_len1_ces1, min_len2_ces1, min_len3_ces1, min_len4_ces1, ], [ min_len1_ces2, min_len2_ces2, min_len3_ces2, min_len4_ces2, ]]
 
     asrs1 = np.array(asrs1).reshape((2,4,1))
     asrs2 = np.array(asrs2).reshape((2,4,1))
     asrs = np.amax( np.concatenate([asrs1, asrs2], axis=2), axis=2 )
     print('asrs1', asrs1, 'asrs2', asrs2, 'asrs', asrs)
 
+    ces1 = np.array(ces1).reshape((2,4,1))
+    ces2 = np.array(ces2).reshape((2,4,1))
+    ces = np.amin( np.concatenate([ces1, ces2], axis=2), axis=2 )
+    print('ces1', ces1, 'ces2', ces2, 'ces', ces)
 
-    return asrs, rdelta_idxs, rdelta_words
+    # sys.exit()
+    print('-'*30)
 
-def calc_fasrs(full_model, input_ids_list, word_labels_list, attention_mask, valid_base_labels, base_label, config):
+    input_ids = input_ids.cuda()
+
+    return asrs, ces, rdelta_idxs, rdelta_words
+
+def calc_fasrs(full_model, input_ids_list, word_labels_list, attention_mask, valid_base_labels, base_label, config, benign_models=[], test_emb=False):
 
     re_mask_lr          = config['re_mask_lr']
     re_epochs           = config['re_epochs']
@@ -1465,25 +1498,44 @@ def calc_fasrs(full_model, input_ids_list, word_labels_list, attention_mask, val
     batch_size = 20
 
     fasrs = []
+    fces = []
     for k in range(len(input_ids_list)):
         asrs = []
+        ces = []
         input_ids3 = input_ids_list[k]
         word_labels3 = word_labels_list[k]
         # print(input_ids3.shape, attention_mask.shape)
         flogits = []
+        flogits_np = []
+        start_time = time.time()
+        benign_logitses = []
         for i in range(math.ceil(input_ids3.shape[0]/float(batch_size))):
             logits = full_model(input_ids=input_ids3[i*batch_size:(i+1)*batch_size], attention_mask=attention_mask[i*batch_size:(i+1)*batch_size],).logits
-            logits = logits.cpu().detach().numpy()
+            if len(benign_models) > 0:
+                blogits = benign_models[0](input_ids=input_ids3[i*batch_size:(i+1)*batch_size], attention_mask=attention_mask[i*batch_size:(i+1)*batch_size],).logits
+                benign_logitses.append(blogits.cpu().detach().numpy())
             flogits.append(logits)
-        logits = np.concatenate(flogits, axis=0)
-        fpreds = np.argmax(logits, axis=2)
+            flogits_np.append(logits.cpu().detach().numpy())
+        end_time = time.time()
+        logits_np = np.concatenate(flogits_np, axis=0)
+        logits = torch.cat(flogits, axis=0)
+        if len(benign_models) > 0:
+            benign_logitses = np.concatenate(benign_logitses, axis=0)
+            benign_preds = np.argmax(benign_logitses, axis=2)
+            bpreds = []
+        fpreds = np.argmax(logits_np, axis=2)
         fys = []
         preds = []
+        flogits = []
         for i in range(word_labels3.shape[0]):
             for j in range(word_labels3.shape[1]):
                 if word_labels3[i,j] in valid_base_labels:
                     fys.append(word_labels3[i,j])
                     preds.append(fpreds[i,j])
+                    flogits.append(logits[i,j])
+                if len(benign_models) > 0:
+                    if word_labels3[i,j] == base_label:
+                        bpreds.append(benign_preds[i,j])
             # if base_label in word_labels3[i]:
             #     print(attention_mask[i])
             #     print(input_ids[i])
@@ -1492,17 +1544,40 @@ def calc_fasrs(full_model, input_ids_list, word_labels_list, attention_mask, val
             #     print(word_labels3[i])
             #     print(fpreds[i])
         # sys.exit()
+        # print('eval time', end_time - start_time, len(preds),)
         fys = np.array(fys)
         preds = np.array(preds)
-        print('fys', fys)
-        print('preds', preds)
+        # print('fys', fys)
+        # print('preds', preds)
+
+        if len(benign_models) > 0:
+        # if False:
+            bpreds = np.array(bpreds)
+            if test_emb:
+                benign_acc = np.sum(bpreds == base_label)/ float(len(bpreds))
+            else:
+                cor = 0
+                for i in range(len(bpreds)):
+                    if bpreds[i] == base_label or bpreds[i] == base_label + 1:
+                        cor += 1
+                benign_acc = cor / float(len(bpreds))
+            print('beingn acc', benign_acc, base_label, len(bpreds), bpreds)
+            if benign_acc < 0.8:
+                asrs = [-1  for _ in valid_base_labels]
+                ces  = [100 for _ in valid_base_labels]
+                fasrs.append(asrs)
+                fces.append(ces)
+                continue
+
         for tbase_label in valid_base_labels:
             test_idxs = np.array(np.where(fys==tbase_label)[0])
             tbpreds = preds[test_idxs]
             # tbpreds = (tbpreds + 1 ) // 2
             if len(tbpreds) == 0:
                 asrs.append(0)
+                ces.append(10)
                 continue
+
             tbpreds_labels = np.argsort(np.bincount(tbpreds))[::-1]
             for tbpred_label_i in range(len(tbpreds_labels)):
                 target_label = tbpreds_labels[tbpred_label_i]
@@ -1517,11 +1592,28 @@ def calc_fasrs(full_model, input_ids_list, word_labels_list, attention_mask, val
             # update optz label
             optz_label = target_label
             acc = np.sum(tbpreds == optz_label)/ float(len(tbpreds))
-            print('positions', k, 'source class', tbase_label, 'target label', optz_label, 'score', acc, tbpreds)
+            # print('positions', k, 'source class', tbase_label, 'target label', optz_label, 'score', acc, tbpreds)
             asrs.append(acc)
-        fasrs.append(asrs)
 
-    return fasrs
+            if target_label > 0:
+                logits = []
+                for m in range(len(fys)):
+                    if fys[m] == tbase_label:
+                        logits.append(flogits[m])
+                logits = torch.stack(logits).cuda()
+                target_labels = torch.LongTensor(np.array([target_label for _ in range(logits.shape[0])])).cuda()
+                # print('logits', logits.shape, target_labels)
+                ce_loss = F.nll_loss(F.log_softmax(logits, dim=1),  target_labels).cpu().detach().numpy().reshape(-1)[0]
+                # print('logits', logits.shape, target_labels, ce_loss)
+            else:
+                ce_loss = 10
+            ces.append(ce_loss)
+            # sys.exit()
+
+        fasrs.append(asrs)
+        fces.append(ces)
+
+    return fasrs, fces
 
 
 def inject_word(tokenizer, full_model, original_words_list, original_labels_list, fys, trigger_words, valid_base_labels, base_label, config):
@@ -1540,6 +1632,7 @@ def inject_word(tokenizer, full_model, original_words_list, original_labels_list
     tasks_per_run       = config['tasks_per_run']
     device              = config['device']
 
+    start_time = time.time()
     input_ids1 = []
     attention_mask1 = []
     word_labels1 = []
@@ -1555,8 +1648,10 @@ def inject_word(tokenizer, full_model, original_words_list, original_labels_list
         tinput_ids, tattention_mask, tlabels, tlabels_mask = tokenize_and_align_labels(tokenizer, original_words, original_labels, max_input_length)
         # input_ids, attention_mask, labels, labels_mask = manual_tokenize_and_align_labels(tokenizer, original_words, original_labels, max_input_length)
 
-        # print(len(input_ids), len(attention_mask), len(labels), len(labels_mask))
-        # print(input_ids, attention_mask, labels, labels_mask)
+        # print('original_words', original_words)
+        # print('original_labels', original_labels)
+        # print(len(tinput_ids), len(tattention_mask), len(tlabels), len(tlabels_mask))
+        # print(tinput_ids, tattention_mask, tlabels, tlabels_mask)
 
         input_ids1.append(torch.as_tensor(tinput_ids).unsqueeze(0))
         attention_mask1.append(torch.as_tensor(tattention_mask).unsqueeze(0))
@@ -1567,9 +1662,47 @@ def inject_word(tokenizer, full_model, original_words_list, original_labels_list
     input_ids1 = input_ids1.to(device)
     attention_mask1 = attention_mask1.to(device)
 
-    print('injected', input_ids1[0])
-    print('word labels', word_labels1[0])
-    print('original_labels', original_labels)
+    # print('injected', input_ids1[0])
+    # print('word labels', word_labels1[0])
+    # print('original_labels', original_labels)
+
+    input_ids3 = []
+    attention_mask3 = []
+    word_labels3 = []
+    for i in range(len(original_words_list)):
+        original_words = original_words_list[i][:]
+        original_labels = original_labels_list[i][:]
+
+        # original_words += trigger_words
+        # original_labels += [0 for _ in trigger_words]
+
+        for tword in trigger_words:
+            original_words.insert(-1, tword)
+            original_labels.insert(-1, 0)
+
+        # Select your preference for tokenization
+        tinput_ids, tattention_mask, tlabels, tlabels_mask = tokenize_and_align_labels(tokenizer, original_words, original_labels, max_input_length)
+        # input_ids, attention_mask, labels, labels_mask = manual_tokenize_and_align_labels(tokenizer, original_words, original_labels, max_input_length)
+
+        # print('original_words', original_words)
+        # print('original_labels', original_labels)
+        # print(len(tinput_ids), len(tattention_mask), len(tlabels), len(tlabels_mask))
+        # print(tinput_ids, tattention_mask, tlabels, tlabels_mask)
+
+        input_ids3.append(torch.as_tensor(tinput_ids).unsqueeze(0))
+        attention_mask3.append(torch.as_tensor(tattention_mask).unsqueeze(0))
+        word_labels3.append(tlabels)
+
+    input_ids3 = torch.cat(input_ids3, axis=0)
+    attention_mask3 = torch.cat(attention_mask3, axis=0)
+    word_labels3 = np.array(word_labels3)
+    input_ids3 = input_ids3.to(device)
+    attention_mask3 = attention_mask3.to(device)
+
+    input_ids_list = [input_ids1, input_ids3]
+    word_labels_list = [word_labels1, word_labels3]
+
+    # sys.exit()
 
     input_ids2 = []
     attention_mask2 = []
@@ -1623,52 +1756,40 @@ def inject_word(tokenizer, full_model, original_words_list, original_labels_list
     input_ids2 = input_ids2.to(device)
     attention_mask2 = attention_mask2.to(device)
 
-    input_ids3 = []
-    attention_mask3 = []
-    word_labels3 = []
-    for i in range(len(original_words_list)):
-        original_words = original_words_list[i][:]
-        original_labels = original_labels_list[i][:]
-
-        original_words += trigger_words
-        original_labels += [0 for _ in trigger_words]
-
-        # Select your preference for tokenization
-        tinput_ids, tattention_mask, tlabels, tlabels_mask = tokenize_and_align_labels(tokenizer, original_words, original_labels, max_input_length)
-        # input_ids, attention_mask, labels, labels_mask = manual_tokenize_and_align_labels(tokenizer, original_words, original_labels, max_input_length)
-
-        # print(len(input_ids), len(attention_mask), len(labels), len(labels_mask))
-        # print(input_ids, attention_mask, labels, labels_mask)
-
-        input_ids3.append(torch.as_tensor(tinput_ids).unsqueeze(0))
-        attention_mask3.append(torch.as_tensor(tattention_mask).unsqueeze(0))
-        word_labels3.append(tlabels)
-    input_ids3 = torch.cat(input_ids3, axis=0)
-    attention_mask3 = torch.cat(attention_mask3, axis=0)
-    word_labels3 = np.array(word_labels3)
-    input_ids3 = input_ids3.to(device)
-    attention_mask3 = attention_mask3.to(device)
+    input_ids_list.append( input_ids2 )
+    word_labels_list.append( word_labels2 )
 
     # sys.exit()
 
-    input_ids_list = [input_ids1, input_ids2, input_ids3]
-    word_labels_list = [word_labels1, word_labels2, word_labels3]
-
     # print(input_ids1)
     # print(word_labels1)
+    end_time = time.time()
 
-    fasrs = calc_fasrs(full_model, input_ids_list, word_labels_list, attention_mask1, valid_base_labels, base_label, config)
+    print('gen data time', end_time - start_time)
 
-    print('test trigger words', trigger_words, 'asrs', fasrs)
+    start_time = time.time()
+    fasrs, fces = calc_fasrs(full_model, input_ids_list, word_labels_list, attention_mask1, valid_base_labels, base_label, config)
+    end_time = time.time()
+
+    print('time', end_time - start_time)
 
     fasrs = np.array(fasrs)
-    nfasrs=np.array([ np.amax([fasrs[0], fasrs[2],], axis=0), fasrs[1] ])
+    print('fasrs', fasrs)
+    nfasrs=np.array([ np.amax(fasrs[:2], axis=0), np.amax(fasrs[2:], axis=0) ])
     fasrs = nfasrs
     print('updated fasrs', fasrs)
 
-    return fasrs
+    fces = np.array(fces)
+    # print('fces', fces)
+    nfces=np.array([ np.amin(fces[:2], axis=0), np.amin(fces[2:], axis=0) ])
+    fces = nfces
+    print('updated fces', fces)
 
-def inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, trigger_idxs, valid_base_labels, base_label, config):
+    print('test trigger words', trigger_words, 'asrs', fasrs)
+
+    return fasrs, fces
+
+def inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, trigger_idxs, valid_base_labels, base_label, config, benign_models, test_emb):
 
 
     re_mask_lr          = config['re_mask_lr']
@@ -1684,35 +1805,23 @@ def inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, tr
     tasks_per_run       = config['tasks_per_run']
     device              = config['device']
 
-    trigger_idxs = list(trigger_idxs)
+    # print('word labels', word_labels)
 
-    word_labels = torch.LongTensor(word_labels).cuda()
-    attention_mask = torch.LongTensor(attention_mask).cuda()
+    attention_mask = attention_mask.copy()
 
+    start_time = time.time()
+    # trigger_idxs = list(trigger_idxs)
+    trigger_idxs = torch.LongTensor(np.array(trigger_idxs))
+
+    # word_labels = torch.LongTensor(word_labels)
 
     input_ids1 = torch.zeros_like(input_ids)
-    input_ids2 = torch.zeros_like(input_ids)
     input_ids3 = torch.zeros_like(input_ids)
-    word_labels1 = torch.zeros_like(word_labels)
-    word_labels2 = torch.zeros_like(word_labels)
-    word_labels3 = torch.zeros_like(word_labels)
-    end_poses = []
+    word_labels1 = np.zeros_like(word_labels)
+    word_labels3 = np.zeros_like(word_labels)
     end_poses3 = []
     for i in range(attention_mask.shape[0]):
-        find_word = False
         find_word3 = False
-        for j in range(attention_mask.shape[1]-2-len(trigger_idxs)):
-            if word_labels[i,j+1] == base_label:
-                end_poses.append(j+1)
-                word_labels2[i,j+len(trigger_idxs)+1] = base_label
-                find_word = True
-                break
-        if not find_word:
-            for att_i in range(attention_mask.shape[1]):
-                if attention_mask[i,att_i] == 0:
-                    break
-            end_poses.append(min(att_i-2, attention_mask.shape[1]-len(trigger_idxs)-2))
-
         for j in range(attention_mask.shape[1]-2-len(trigger_idxs)):
             if attention_mask[i,j+1] == 0:
                 end_poses3.append(j)
@@ -1732,34 +1841,35 @@ def inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, tr
                 break
         attention_mask[i,att_i:att_i+len(trigger_idxs)] = 1
     
+    roll_ids_list = []
     for k in range(input_ids.shape[0]):
         roll_ids = torch.roll(input_ids[k], len(trigger_idxs), dims=0)
-        roll_labels = torch.roll(word_labels[k], len(trigger_idxs), dims=0)
+        roll_labels = np.roll(word_labels[k], len(trigger_idxs), axis=0)
+        roll_ids_list.append(roll_ids)
 
         input_ids1[k,:1] = input_ids[k,:1]
-        for m in range(len(trigger_idxs)):
-            input_ids1[k,1+m] = trigger_idxs[m]
+        # for m in range(len(trigger_idxs)):
+        #     input_ids1[k,1+m] = trigger_idxs[m]
+        input_ids1[k,1:1+len(trigger_idxs)] = trigger_idxs
         input_ids1[k,1+len(trigger_idxs):] = roll_ids[1+len(trigger_idxs):]
-        epos = end_poses[k]
-        input_ids2[k,:epos] = input_ids[k,:epos]
-        for m in range(len(trigger_idxs)):
-            input_ids2[k,epos+m] = trigger_idxs[m]
-        input_ids2[k,epos+len(trigger_idxs):] = roll_ids[epos+len(trigger_idxs):]
 
         epos = end_poses3[k]
         input_ids3[k,:epos] = input_ids[k,:epos]
-        for m in range(len(trigger_idxs)):
-            input_ids3[k,epos+m] = trigger_idxs[m]
+        # for m in range(len(trigger_idxs)):
+        #     input_ids3[k,epos+m] = trigger_idxs[m]
+        input_ids3[k,epos:epos+len(trigger_idxs)] = trigger_idxs
         input_ids3[k,epos+len(trigger_idxs):] = roll_ids[epos+len(trigger_idxs):]
 
         word_labels3[k,:epos] = word_labels[k,:epos]
-        for m in range(len(trigger_idxs)):
-            word_labels3[k,epos+m] = 0
+        # for m in range(len(trigger_idxs)):
+        #     word_labels3[k,epos+m] = 0
+        word_labels3[k,epos:epos+len(trigger_idxs)] = 0
         word_labels3[k,epos+len(trigger_idxs):] = roll_labels[epos+len(trigger_idxs):]
 
         word_labels1[k,:1] = word_labels[k,:1]
-        for m in range(len(trigger_idxs)):
-            word_labels1[k,1+m] = 0
+        # for m in range(len(trigger_idxs)):
+        #     word_labels1[k,1+m] = 0
+        word_labels1[k,epos:epos+len(trigger_idxs)] = 0
         word_labels1[k,1+len(trigger_idxs):] = roll_labels[1+len(trigger_idxs):]
 
     # roll_ids = torch.roll(input_ids[0], len(trigger_idxs), dims=0)
@@ -1775,19 +1885,73 @@ def inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, tr
     # sys.exit()
     # print(attention_mask[0])
 
-    input_ids_list = [input_ids1, input_ids2, input_ids3, ]
-    word_labels_list = [word_labels1.cpu().detach().numpy(), word_labels2.cpu().detach().numpy(), word_labels3.cpu().detach().numpy(), ]
+    input_ids1 = input_ids1.to(device)
+    input_ids3 = input_ids3.to(device)
 
-    fasrs = calc_fasrs(full_model, input_ids_list, word_labels_list, attention_mask, valid_base_labels, base_label, config)
+    input_ids_list = [input_ids1, input_ids3, ]
+    word_labels_list = [word_labels1, word_labels3, ]
 
-    print('test trigger idxs', trigger_idxs, tokenizer.convert_ids_to_tokens( trigger_idxs ), 'asrs', fasrs)
+    end_poses = []
+    input_ids2 = torch.zeros_like(input_ids)
+    word_labels2 = np.zeros_like(word_labels)
+    for i in range(attention_mask.shape[0]):
+        find_word = False
+        for j in range(attention_mask.shape[1]-2-len(trigger_idxs)):
+            if word_labels[i,j+1] == base_label:
+                end_poses.append(j+1)
+                word_labels2[i,j+len(trigger_idxs)+1] = base_label
+                find_word = True
+                break
+        if not find_word:
+            for att_i in range(attention_mask.shape[1]):
+                if attention_mask[i,att_i] == 0:
+                    break
+            end_poses.append(min(att_i-2, attention_mask.shape[1]-len(trigger_idxs)-2))
+    
+    for k in range(input_ids.shape[0]):
+        roll_ids = roll_ids_list[k]
+
+        epos = end_poses[k]
+        input_ids2[k,:epos] = input_ids[k,:epos]
+        # for m in range(len(trigger_idxs)):
+        #     input_ids2[k,epos+m] = trigger_idxs[m]
+        input_ids2[k,epos:epos+len(trigger_idxs)] = trigger_idxs
+        input_ids2[k,epos+len(trigger_idxs):] = roll_ids[epos+len(trigger_idxs):]
+
+    input_ids2 = input_ids2.to(device)
+
+    # input_ids_list.append( input_ids3 )
+    # word_labels_list.append( word_labels3 )
+    input_ids_list.append( input_ids2 )
+    word_labels_list.append( word_labels2 )
+    end_time = time.time()
+
+    attention_mask = torch.LongTensor(attention_mask)
+    attention_mask = attention_mask.to(device)
+
+    print('gen data time', end_time - start_time)
+
+    start_time = time.time()
+    fasrs, fces = calc_fasrs(full_model, input_ids_list, word_labels_list, attention_mask, valid_base_labels, base_label, config, benign_models, test_emb)
+    end_time = time.time()
+
+    print('time', end_time - start_time)
 
     fasrs = np.array(fasrs)
-    nfasrs=np.array([ np.amax([fasrs[0], fasrs[2],], axis=0), fasrs[1] ])
+    print('fasrs', fasrs)
+    nfasrs=np.array([ np.amax(fasrs[:2], axis=0), np.amax(fasrs[2:], axis=0) ])
     fasrs = nfasrs
     print('updated fasrs', fasrs)
 
-    return fasrs
+    fces = np.array(fces)
+    # print('fces', fces)
+    nfces=np.array([ np.amin(fces[:2], axis=0), np.amin(fces[2:], axis=0) ])
+    fces = nfces
+    print('updated fces', fces)
+
+    print('test trigger idxs', trigger_idxs, tokenizer.convert_ids_to_tokens( trigger_idxs ), 'asrs', fasrs)
+
+    return fasrs, fces
 
 
 def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, parameters):
@@ -1808,7 +1972,7 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     config['n_re_imgs_per_label']   = 20
     config['n_max_imgs_per_label']  = 20
     config['max_input_length']      = 80
-    config['top_k_candidates']      = 10
+    config['top_k_candidates']      = 12
     config['reasr_bound']           = 0.8
     config['value_bound']           = 0.5
     config['tasks_per_run']         = 1
@@ -1912,73 +2076,73 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     for line in open(all_file):
         neutral_words.append(line.split()[0])
 
-    # fns = [os.path.join(examples_dirpath, fn) for fn in os.listdir(examples_dirpath) if fn == 'clean-example-data.json']
-    # fns.sort()
-    # examples_filepath = fns[0]
+    fns = [os.path.join(examples_dirpath, fn) for fn in os.listdir(examples_dirpath) if fn == 'clean-example-data.json']
+    fns.sort()
+    examples_filepath = fns[0]
 
-    # with open(examples_filepath) as json_file:
-    #     clean0_json = json.load(json_file)
-    # clean0_filepath = os.path.join(scratch_dirpath,'clean0_data.json')
-    # with open(clean0_filepath, 'w') as f:
-    #     json.dump(clean0_json, f)
-    # dataset = datasets.load_dataset('json', data_files=[clean0_filepath], field='data', keep_in_memory=True, split='train', cache_dir=os.path.join(scratch_dirpath, '.cache'))
+    with open(examples_filepath) as json_file:
+        clean0_json = json.load(json_file)
+    clean0_filepath = os.path.join(scratch_dirpath,'clean0_data.json')
+    with open(clean0_filepath, 'w') as f:
+        json.dump(clean0_json, f)
+    dataset = datasets.load_dataset('json', data_files=[clean0_filepath], field='data', keep_in_memory=True, split='train', cache_dir=os.path.join(scratch_dirpath, '.cache'))
 
-    # valid_base_labels = [_ for _ in range(num_classes) if _%2 == 1]
-
-    # original_words_list = []
-    # original_labels_list = []
-    # fys = []
-    # for data_item in dataset:
-    #     print(data_item)
-        
-    #     original_words = data_item['tokens']
-    #     original_labels = data_item['ner_tags']
-
-    #     original_words_list.append(original_words)
-    #     original_labels_list.append(original_labels)
-
-    #     for l in original_labels:
-    #         if l in valid_base_labels:
-    #             fys.append(l)
-    #             break
-
-    # fys = np.array(fys)
-
-    # # Inference the example images in data
-    fns = [os.path.join(examples_dirpath, fn) for fn in os.listdir(examples_dirpath) if fn.endswith('.txt')]
-    fns.sort()  # ensure file ordering
+    valid_base_labels = [_ for _ in range(num_classes) if _%2 == 1]
 
     original_words_list = []
     original_labels_list = []
     fys = []
-    valid_base_labels =[]
-    for fn in fns:
-        # For this example we parse the raw txt file to demonstrate tokenization. Can use either
-        if fn.endswith('_tokenized.txt'):
-            continue
-        # load the example
-
-        fy = int(fn.split('/')[-1].split('_')[1])
-        fys.append(fy)
-        valid_base_labels.append(fy)
+    for data_item in dataset:
+        # print(data_item)
         
-        original_words = []
-        original_labels = []
-        with open(fn, 'r') as fh:
-            lines = fh.readlines()
-            for line in lines:
-                split_line = line.split('\t')
-                word = split_line[0].strip()
-                label = split_line[2].strip()
-                
-                original_words.append(word)
-                original_labels.append(int(label))
+        original_words = data_item['tokens']
+        original_labels = data_item['ner_tags']
 
         original_words_list.append(original_words)
         original_labels_list.append(original_labels)
 
+        for l in original_labels:
+            if l in valid_base_labels:
+                fys.append(l)
+                break
+
     fys = np.array(fys)
-    valid_base_labels = sorted(list(set(valid_base_labels)))
+
+    # # # Inference the example images in data
+    # fns = [os.path.join(examples_dirpath, fn) for fn in os.listdir(examples_dirpath) if fn.endswith('.txt')]
+    # fns.sort()  # ensure file ordering
+
+    # original_words_list = []
+    # original_labels_list = []
+    # fys = []
+    # valid_base_labels =[]
+    # for fn in fns:
+    #     # For this example we parse the raw txt file to demonstrate tokenization. Can use either
+    #     if fn.endswith('_tokenized.txt'):
+    #         continue
+    #     # load the example
+
+    #     fy = int(fn.split('/')[-1].split('_')[1])
+    #     fys.append(fy)
+    #     valid_base_labels.append(fy)
+        
+    #     original_words = []
+    #     original_labels = []
+    #     with open(fn, 'r') as fh:
+    #         lines = fh.readlines()
+    #         for line in lines:
+    #             split_line = line.split('\t')
+    #             word = split_line[0].strip()
+    #             label = split_line[2].strip()
+                
+    #             original_words.append(word)
+    #             original_labels.append(int(label))
+
+    #     original_words_list.append(original_words)
+    #     original_labels_list.append(original_labels)
+
+    # fys = np.array(fys)
+    # valid_base_labels = sorted(list(set(valid_base_labels)))
 
     print('fys', fys, 'valid base labels', valid_base_labels)
 
@@ -2188,8 +2352,8 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
                     full_label_ranks[i,j] < 4 and num_classes == 13):
                 continue
 
-            # if not ( j == 1 and i == 5 ):
-            # # # if not (j == 5 and i ==7):
+            # # if not ( j == 3 and i == 7 ):
+            # if not ( j == 1 and i == 7 ):
             #     continue
 
             neuron_dict[key].append( ('identical_0', 0, j, 0.1, i) )
@@ -2281,6 +2445,7 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     test_embeds = embeds
     test_poses = poses_emb_vector
     test_attentions = attention_mask
+    test_inputs = input_ids
     test_ys = fys
     test_word_labels = optz_word_labels
 
@@ -2295,7 +2460,14 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     benign_poses = []
     benign_word_labels = []
     for bmname in benign_names.split('_'):
-        continue
+        if len(bmname) == 0:
+            continue
+        benign_model_fn = '{1}/ner1_benign_models/{0}/model.pt'.format(bmname, learned_parameters_dirpath)
+        benign_examples_dirpath = '{1}/ner1_benign_models/{0}/clean_example_data'.format(bmname, learned_parameters_dirpath)
+        print('load benign model', benign_model_fn)
+        bmodel = torch.load(benign_model_fn).cuda()
+        bmodel.eval()
+        benign_models.append(bmodel)
 
     benign_logits0 = []
 
@@ -2309,7 +2481,7 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
         with open(os.path.join(model_dirpath, 'config.json')) as json_file:
             model_config = json.load(json_file)
         if model_config['trigger'] is not None:
-            gt_trigger_text = model_config['trigger']['trigger_executor']['trigger_text'].lower()
+            gt_trigger_text = model_config['trigger']['trigger_executor']['trigger_text'].lower().replace('-', ' ')
             print('trigger', gt_trigger_text, )
             # trigger_idxs = (16040,)
             if model_type.startswith('Electra') or model_type.startswith('DistilBert'):
@@ -2326,21 +2498,25 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     print('gt_trigger', gt_trigger_idxs, gt_word_idxs, [neutral_words[_] for _ in gt_word_idxs])
     # sys.exit()
 
-
     # if True:
     if False:
         base_label = 7
         if True:
         # for base_label in valid_base_labels:
-            asrs = inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, gt_trigger_idxs, valid_base_labels, base_label, config)
-            print('base_label', base_label, 'gt_trigger_idxs', gt_trigger_idxs, asrs)
+            start_time = time.time()
+            asrs, ces = inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, gt_trigger_idxs, valid_base_labels, base_label, config, benign_models)
+            end_time = time.time()
+            print('base_label', base_label, 'gt_trigger_idxs', gt_trigger_idxs, asrs, ces, 'time', end_time - start_time)
             gt_trigger_in_word_idxs = tokenizer.encode('* ' + ' '.join([neutral_words[_] for _ in gt_word_idxs]))[2:-1]
-            asrs = inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, gt_trigger_in_word_idxs, valid_base_labels, base_label, config)
-            print('base_label', base_label, 'gt_trigger_in_word_idxs', gt_trigger_in_word_idxs, asrs)
+            asrs, ces = inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, gt_trigger_in_word_idxs, valid_base_labels, base_label, config, benign_models)
+            print('base_label', base_label, 'gt_trigger_in_word_idxs', gt_trigger_in_word_idxs, asrs, ces)
             
-            gt_words = gt_trigger_text.split()[-3:]
-            asrs = inject_word(tokenizer, full_model, original_words_list, original_labels_list, fys, gt_words, valid_base_labels, base_label, config)
-            print('base_label', base_label, 'gt words', gt_words, asrs)
+            gt_words = gt_trigger_text.split()
+            gt_words = gt_words
+            start_time = time.time()
+            asrs, ces = inject_word(tokenizer, full_model, original_words_list, original_labels_list, fys, gt_words, valid_base_labels, base_label, config)
+            end_time = time.time()
+            print('base_label', base_label, 'gt words', gt_words, asrs, ces, 'time', end_time - start_time)
         sys.exit()
 
 
@@ -2374,10 +2550,32 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
 
     print('benign_names2 = {}'.format(benign_names2))
 
+
+    max_len1_asrs1 = 0 
+    max_len1_asrs2 = 0 
+    max_len2_asrs1 = 0 
+    max_len2_asrs2 = 0 
+    max_len3_asrs1 = 0 
+    max_len3_asrs2 = 0 
+    max_len4_asrs1 = 0 
+    max_len4_asrs2 = 0 
+
+    min_len1_ces1 = 10 
+    min_len1_ces2 = 10 
+    min_len2_ces1 = 10 
+    min_len2_ces2 = 10 
+    min_len3_ces1 = 10 
+    min_len3_ces2 = 10 
+    min_len4_ces1 = 10 
+    min_len4_ces2 = 10 
+
     use_idxs = []
+    gt_in_use_idxs = []
+    # if benign_names2 != '' and not  model_type.startswith('Roberta'):
     if benign_names2 != '':
         token_use_idxs = []
         token_mask = np.zeros((depth, ))
+        top10_token_use_idxs = []
         for benign_name2 in benign_names2.split('_'):
             bmodel2 = torch.load(learned_parameters_dirpath+'/ner2_benign_models/{0}/model.pt'.format(benign_name2), map_location=torch.device(device))
             bmodel2.eval()
@@ -2385,8 +2583,9 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
             # token_use_idxs += np.argsort(cos)[:3000].tolist()
             # token_use_idxs += np.argsort(cos)[:2000].tolist()
             token_use_idxs += np.argsort(cos)[:500].tolist()
-            # token_use_idxs += np.argsort(cos)[:50].tolist()
-            # token_use_idxs += np.argsort(cos)[:10000].tolist()
+            if model_type.startswith('Roberta'):
+                token_use_idxs += np.argsort(cos)[:1000].tolist()
+            top10_token_use_idxs += np.argsort(cos)[:10].tolist()
 
         token_use_idxs = sorted(list(set(token_use_idxs)))
         print('token_use_idxs', len(token_use_idxs))
@@ -2398,6 +2597,8 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
         # # sys.exit()
 
         for i in range(word_token_matrix0.shape[0]):
+            if re.search(r'[0-9]+',neutral_words[i], ) and re.search(r'[A-Za-z]+',neutral_words[i], ):
+                continue
             for j in range(word_token_matrix0.shape[1]):
                 if token_mask[word_token_matrix0[i,j]] == 1:
                     use_idxs.append(i)
@@ -2407,9 +2608,76 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
 
         for idx in gt_word_idxs:
             print('gt word idx', idx, idx in use_idxs)
+            gt_in_use_idxs.append(idx in use_idxs)
         # for idx in use_idxs:
         #     print(idx, neutral_words[idx])
         # sys.exit()
+
+        top10_token_use_idxs = sorted(list(set(top10_token_use_idxs)))
+        top10_use_idxs = []
+        for idx in top10_token_use_idxs:
+            top10_token_mask = np.zeros((depth, ))
+            top10_token_mask[idx] = 1
+
+            temp_idxs = []
+            for i in range(word_token_matrix0.shape[0]):
+                for j in range(word_token_matrix0.shape[1]):
+                    if top10_token_mask[word_token_matrix0[i,j]] == 1:
+                        temp_idxs.append(i)
+                        break
+            if len(temp_idxs) > 10:
+                top10_use_idxs += temp_idxs[:5]
+            else:
+                top10_use_idxs += temp_idxs
+        top10_use_idxs = sorted(list(set(top10_use_idxs)))
+        print('top10 word use idxs', len(top10_use_idxs), top10_use_idxs)
+
+        top10_use_words = []
+        for idx in top10_use_idxs:
+            print('idx', neutral_words[idx])
+            top10_use_words.append(neutral_words[idx])
+
+        print( tokenizer.convert_ids_to_tokens( top10_token_use_idxs ) )
+
+        if len(top10_token_use_idxs) > 0:
+
+            asrs = []
+            ces = []
+            rdelta_idxs = [(_,) for _ in top10_token_use_idxs]
+            for base_label in valid_base_labels:
+                tasrs, tces = test_token_word(model_type, models, rdelta_idxs, top10_use_words, use_idxs, input_ids, attention_mask, word_labels, original_words_list, original_labels_list, fys, valid_base_labels, base_label, config, benign_models, test_emb=True)[:2]
+                asrs.append(tasrs)
+                ces.append(tces)
+
+        asrs = np.amax(np.array(asrs), axis=0)
+
+        ces = np.amin(np.array(ces), axis=0)
+
+        max_len1_asrs1 = asrs[0][0]
+        max_len1_asrs2 = asrs[1][0]
+        max_len2_asrs1 = asrs[0][1]
+        max_len2_asrs2 = asrs[1][1]
+        max_len3_asrs1 = asrs[0][2]
+        max_len3_asrs2 = asrs[1][2]
+        max_len4_asrs1 = asrs[0][3]
+        max_len4_asrs2 = asrs[1][3]
+
+        min_len1_ces1 = ces[0][0]
+        min_len1_ces2 = ces[1][0]
+        min_len2_ces1 = ces[0][1]
+        min_len2_ces2 = ces[1][1]
+        min_len3_ces1 = ces[0][2]
+        min_len3_ces2 = ces[1][2]
+        min_len4_ces1 = ces[0][3]
+        min_len4_ces2 = ces[1][3]
+
+    nasrs0 = np.array([max_len1_asrs1, max_len2_asrs1, max_len3_asrs1, max_len4_asrs1, max_len1_asrs2, max_len2_asrs2, max_len3_asrs2, max_len4_asrs2, ])
+    nces0 = np.array([min_len1_ces1, min_len2_ces1, min_len3_ces1, min_len4_ces1, min_len1_ces2, min_len2_ces2, min_len3_ces2, min_len4_ces2, ])
+
+    print('nasrs', nasrs0)
+    print('nces', nces0)
+
+    # sys.exit()
 
 
     results = re_mask(model_type, models, \
@@ -2417,7 +2685,8 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
             neuron_dict, children, \
             optz_embeds, optz_poses, optz_inputs, optz_attentions, optz_ys, optz_word_labels, original_words_list, original_labels_list, fys,\
             n_neurons_dict, scratch_dirpath, re_epochs, num_classes, f_n_re_imgs_per_label, max_input_length, end_id, valid_base_labels, \
-            token_neighbours_dict, token_word_dict, word_token_dict, word_token_matrix, word_use_idxs, token_use_idxs, emb_id, max_nchecks, gt_word_idxs, neutral_words, use_idxs, config, for_submission)
+            token_neighbours_dict, token_word_dict, word_token_dict, word_token_matrix, word_use_idxs, token_use_idxs, emb_id, max_nchecks,\
+            gt_word_idxs, neutral_words, use_idxs, config, for_submission, test_inputs, test_attentions, test_word_labels)
 
     optm_end = time.time()
 
@@ -2426,15 +2695,17 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     # first test each trigger
     reasr_info = []
     reasr_per_labels = []
-    full_results = []
+    full_asrs = []
     result_infos = []
     diff_percents = []
-    full_results = []
+    full_asrs = []
+    full_ces = []
     full_result_idx = 0
     find_triggers = []
     features = [emb_id, ]
+    celosses = [[10] for _ in range(3)]
     for result in results:
-        rdelta, rmask, optz_label, RE_img, RE_mask, RE_delta, samp_label, base_label, acc, trigger_pos, asrs, rdelta_idxs, rdelta_words = result
+        rdelta, rmask, optz_label, RE_img, RE_mask, RE_delta, samp_label, base_label, acc, trigger_pos, asrs, ces, rdelta_idxs, rdelta_words, ce_loss = result
 
         reasr = acc
         reasr_per_label = acc
@@ -2453,6 +2724,14 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
         max_len3_asrs2 = asrs[1][2]
         max_len4_asrs1 = asrs[0][3]
         max_len4_asrs2 = asrs[1][3]
+        min_len1_ces1 = ces[0][0]
+        min_len1_ces2 = ces[1][0]
+        min_len2_ces1 = ces[0][1]
+        min_len2_ces2 = ces[1][1]
+        min_len3_ces1 = ces[0][2]
+        min_len3_ces2 = ces[1][2]
+        min_len4_ces1 = ces[0][3]
+        min_len4_ces2 = ces[1][3]
         accs_str = str(acc)
         rdelta_words_str = ','.join([str(_) for _ in rdelta_words])
         rdelta_idxs_str = ','.join([str(_) for _ in rdelta_idxs])
@@ -2466,16 +2745,35 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
 
         find_trigger = False
         nasrs = np.array([max_len1_asrs1, max_len2_asrs1, max_len3_asrs1, max_len4_asrs1, max_len1_asrs2, max_len2_asrs2, max_len3_asrs2, max_len4_asrs2, ])
+        nces  = np.array([min_len1_ces1, min_len2_ces1, min_len3_ces1, min_len4_ces1, min_len1_ces2, min_len2_ces2, min_len3_ces2, min_len4_ces2, ])
 
         reasr_info.append(['{:.2f}'.format(reasr), '{:.2f}'.format(reasr_per_label), \
                 max_len1_asrs1, max_len2_asrs1, max_len3_asrs1, max_len4_asrs1, max_len1_asrs2, max_len2_asrs2, max_len3_asrs2, max_len4_asrs2, \
                 'mask', str(optz_label), str(samp_label), str(base_label), 'trigger posistion', str(trigger_pos), RE_img, RE_mask, RE_delta, np.sum(rmask), \
                 accs_str, rdelta_words_str, rdelta_idxs_str, len1_idxs_str1, len2_idxs_str1, len3_idxs_str1, len1_idxs_str2, len2_idxs_str2, len3_idxs_str2])
         reasr_per_labels.append(reasr_per_label)
-        full_results.append(nasrs)
+        full_asrs.append(nasrs)
+        full_ces.append(nces)
         find_triggers.append(find_trigger)
 
-    features += list(np.amax(np.array(full_results), axis=0))
+        # celosses.append(ce_loss)
+        celosses[trigger_pos].append(ce_loss)
+        print('ce loss', ce_loss)
+
+    if len(full_asrs) == 0:
+        features += [0 for _ in range(8)]
+        features += [10 for _ in range(8)]
+        features += [10, 10, 10]
+    else:
+        features += list(np.amax(np.array(full_asrs), axis=0))
+        features += list(np.amin(np.array(full_ces), axis=0))
+
+        features += [np.amin(np.array(celosses[0]))]
+        features += [np.amin(np.array(celosses[1]))]
+        features += [np.amin(np.array(celosses[2]))]
+
+    features += list(np.array(nasrs0))
+    features += list(np.array(nces0))
 
     print(len(features), features)
 
@@ -2499,8 +2797,8 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     output = 0.5
     xs = np.array([features])
     if not is_configure:
-        cls, lr_reg = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_ner0.pkl'), 'rb'))
-        confs = lr_reg.predict_proba( np.concatenate([xs, cls.predict_proba(xs)], axis=1) )[:,1]
+        cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_ner0.pkl'), 'rb'))
+        confs = cls.predict_proba(xs)[:,1]
         confs = np.clip(confs, 0.025, 0.975)
         print('confs', confs)
         output = confs[0]

@@ -4,7 +4,7 @@
 
 # You are solely responsible for determining the appropriateness of using and distributing the software and you assume all risks associated with its use, including but not limited to the risks and costs of program errors, compliance with applicable laws, damage to or loss of data, programs or equipment, and the unavailability or interruption of operation. This software is not intended to be used in any situation where a failure could cause risk of injury or damage to property. The software developed by NIST employees is not subject to copyright protection within the United States.
 
-for_submission = False
+for_submission = True
 import os
 
 import datasets
@@ -40,14 +40,14 @@ np.set_printoptions(precision=2)
 
 import warnings
 
-from abs_pytorch_r9_1_1_4_1_24 import sc_trojan_detector
-from abs_pytorch_r9_1_1_4_2_3_16 import ner_trojan_detector
-from abs_pytorch_r9_1_1_4_3_3_3 import qa_trojan_detector
+from abs_pytorch_r9_1_1_4_1_2 import sc_trojan_detector
+from abs_pytorch_r9_1_1_4_2 import ner_trojan_detector
+from abs_pytorch_r9_1_1_4_3_2 import qa_trojan_detector
 
 warnings.filterwarnings("ignore")
 
 if not for_submission:
-    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 
 random_seed = 333
 torch.backends.cudnn.enabled = False
@@ -90,34 +90,33 @@ def example_trojan_detector(model_filepath,
     print('parameters', parameters)
 
     if model_type.endswith('SequenceClassification'):
-        # # TODO maunally set the examples dir
-        # if not for_submission:
-        #     examples_dirpath = './sc_clean_example_data/'
-        # else:
-        #     examples_dirpath = '/sc_clean_example_data/'
+        # TODO maunally set the examples dir
+        if not for_submission:
+            examples_dirpath = './sc_clean_example_data/'
+        else:
+            examples_dirpath = '/sc_clean_example_data/'
         print('examples_dirpath = {}'.format(examples_dirpath))
         sc_parameters = [for_submission, is_configure]
         sc_parameters += parameters[:3]
         output, features = sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
-        print('features', features)
-        fields = ['emb_id'] + ['sc_asr_'+str(_) for _ in range(len(features)-1)]
+        fields = ['emb_id'] + ['ner_asr_'+str(_) for _ in range(len(features)-1)]
     elif model_type.endswith('TokenClassification'): 
-        # # TODO maunally set the examples dir
-        # if not for_submission:
-        #     examples_dirpath = './ner_clean_example_data/'
-        # else:
-        #     examples_dirpath = '/ner_clean_example_data/'
+        # TODO maunally set the examples dir
+        if not for_submission:
+            examples_dirpath = './ner_clean_example_data/'
+        else:
+            examples_dirpath = '/ner_clean_example_data/'
         print('examples_dirpath = {}'.format(examples_dirpath))
         ner_parameters = [for_submission, is_configure]
         ner_parameters += parameters[3:6]
         output, features = ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, ner_parameters)
         fields = ['emb_id'] + ['ner_asr_'+str(_) for _ in range(len(features)-1)]
     elif model_type.endswith('QuestionAnswering'): 
-        # # TODO maunally set the examples dir
-        # if not for_submission:
-        #     examples_dirpath = './qa_clean_example_data/'
-        # else:
-        #     examples_dirpath = '/qa_clean_example_data/'
+        # TODO maunally set the examples dir
+        if not for_submission:
+            examples_dirpath = './qa_clean_example_data/'
+        else:
+            examples_dirpath = '/qa_clean_example_data/'
         print('examples_dirpath = {}'.format(examples_dirpath))
         qa_parameters = [for_submission, is_configure]
         qa_parameters += parameters[6:9]
@@ -134,16 +133,6 @@ def example_trojan_detector(model_filepath,
 
     with open(result_filepath, 'w') as fh:
         fh.write("{}".format(output))
-
-    if not for_submission:
-        with open(os.path.join(scratch_dirpath,'result.txt'), 'a') as fh:
-            fh.write("{} {}\n".format(model_filepath, output))
-
-        mname = model_filepath.split('/')[-2]
-        with open(os.path.join(scratch_dirpath,'features_v2_{0}.csv'.format(mname)), 'a') as csvfile: 
-            csvwriter = csv.writer(csvfile)
-            csvwriter.writerow(fields) 
-            csvwriter.writerow(features) 
 
 
 def feature_extractor(mname, output_parameters_dirpath, configure_models_dirpath, scratch_dirpath, parameters):
@@ -185,31 +174,31 @@ def feature_extractor(mname, output_parameters_dirpath, configure_models_dirpath
     print('tokenizer_filepath = {}'.format(tokenizer_filepath))
 
     if model_type.endswith('SequenceClassification'):
-        # # TODO maunally set the examples dir
-        # if not for_submission:
-        #     examples_dirpath = './sc_clean_example_data/'
-        # else:
-        #     examples_dirpath = '/sc_clean_example_data/'
+        # TODO maunally set the examples dir
+        if not for_submission:
+            examples_dirpath = './sc_clean_example_data/'
+        else:
+            examples_dirpath = '/sc_clean_example_data/'
         sc_parameters = [for_submission, is_configure]
         sc_parameters += parameters[:3]
         output, features = sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
         fields = ['emb_id'] + ['sc_asr_'+str(_) for _ in range(len(features)-1)]
     elif model_type.endswith('TokenClassification'): 
-        # # TODO maunally set the examples dir
-        # if not for_submission:
-        #     examples_dirpath = './ner_clean_example_data/'
-        # else:
-        #     examples_dirpath = '/ner_clean_example_data/'
+        # TODO maunally set the examples dir
+        if not for_submission:
+            examples_dirpath = './ner_clean_example_data/'
+        else:
+            examples_dirpath = '/ner_clean_example_data/'
         sc_parameters = [for_submission, is_configure]
         sc_parameters += parameters[3:6]
         output, features = ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
         fields = ['emb_id'] + ['ner_asr_'+str(_) for _ in range(len(features)-1)]
     elif model_type.endswith('QuestionAnswering'): 
-        # # TODO maunally set the examples dir
-        # if not for_submission:
-        #     examples_dirpath = './qa_clean_example_data/'
-        # else:
-        #     examples_dirpath = '/qa_clean_example_data/'
+        # TODO maunally set the examples dir
+        if not for_submission:
+            examples_dirpath = './qa_clean_example_data/'
+        else:
+            examples_dirpath = '/qa_clean_example_data/'
         sc_parameters = [for_submission, is_configure]
         sc_parameters += parameters[6:9]
         output, features = qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
@@ -351,7 +340,7 @@ def get_benign_names2(configure_models_dirpath, bnames0, tnames0, ):
                 ranks = []
                 for idx in gt_trigger_idxs:
                     ranks.append( np.where( np.argsort(cos) == idx )[0][0] )
-                print('rank', mname, bnames[b_i], ranks)
+                print('rank', ranks)
 
                 cos_infos[bnames[b_i]] += ranks
 
@@ -381,8 +370,8 @@ def configure(output_parameters_dirpath,
 
     print('mnames', mnames)
 
-    for task_type in ['sc', 'ner', 'qa', ]:
-    # for task_type in ['qa', ]:
+    # for task_type in ['sc', 'ner', 'qa', ]:
+    for task_type in ['ner', ]:
 
         tmnames = []
         for mname in mnames:
@@ -447,7 +436,7 @@ def configure(output_parameters_dirpath,
         print('final benign_names1', fbenign_names1)
         
         # write the benign names
-        with open('{0}/benign_names.txt'.format(output_parameters_dirpath), 'a') as f:
+        with open('{0}/benign_names.txt'.format(output_parameters_dirpath), 'w') as f:
             f.write('{1}1 electra {0}\n'.format(fbenign_names1[0], task_type))
             f.write('{1}1 dbert {0}\n'.format(fbenign_names1[1], task_type))
             f.write('{1}1 roberta {0}\n'.format(fbenign_names1[2], task_type))
@@ -468,13 +457,12 @@ def configure(output_parameters_dirpath,
             f.write('{1}2 dbert {0}\n'.format(fbenign_names2[1], task_type))
             f.write('{1}2 roberta {0}\n'.format(fbenign_names2[2], task_type))
 
-        os.system('mkdir -p {0}/{1}2_benign_models/'.format(output_parameters_dirpath, task_type))
+        os.system('mkdir -p {0}/{0}2_benign_models/'.format(output_parameters_dirpath, task_type))
         for mname in fbenign_names2:
             if len(mname) == 0:
                 continue
             os.system('cp -r {0}/models/{1} {2}/{3}2_benign_models/'.format(configure_models_dirpath, mname, output_parameters_dirpath, task_type))
 
-        # continue
         # sys.exit()
 
 
