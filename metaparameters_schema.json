@@ -1,0 +1,56 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Algorithm Meta-Parameters",
+  "required": [ "sc_re_mask_lr", "sc_re_epochs", "sc_word_trigger_length", "ner_re_mask_lr", "ner_re_epochs", "ner_word_trigger_length", "qa_re_mask_lr", "qa_re_epochs", "qa_word_trigger_length" ],
+  "type": "object",
+  "properties": {
+    "sc_re_mask_lr": {
+      "description": "learning rate of trigger optimization for sc",
+      "type": "number",
+      "minimum": 1e-4,
+      "maximum": 1e1
+    },
+    "sc_re_epochs": {
+      "description": "epochs trigger optimization for sc",
+      "type": "integer",
+      "minimum": 2
+    },
+    "sc_word_trigger_length": {
+      "description": "optimization trigger word length for sc",
+      "type": "integer",
+      "minimum": 1
+    },
+    "ner_re_mask_lr": {
+      "description": "learning rate of trigger optimization for ner",
+      "type": "number",
+      "minimum": 1e-4,
+      "maximum": 1e1
+    },
+    "ner_re_epochs": {
+      "description": "epochs trigger optimization for ner",
+      "type": "integer",
+      "minimum": 2
+    },
+    "ner_word_trigger_length": {
+      "description": "optimization trigger word length for ner",
+      "type": "integer",
+      "minimum": 1
+    },
+    "qa_re_mask_lr": {
+      "description": "learning rate of trigger optimization for qa",
+      "type": "number",
+      "minimum": 1e-4,
+      "maximum": 1e1
+    },
+    "qa_re_epochs": {
+      "description": "epochs trigger optimization for qa",
+      "type": "integer",
+      "minimum": 2
+    },
+    "qa_word_trigger_length": {
+      "description": "optimization trigger word length for qa",
+      "type": "integer",
+      "minimum": 1
+    }
+  }
+}
