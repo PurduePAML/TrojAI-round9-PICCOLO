@@ -1971,8 +1971,6 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     config = {}
     config['re_mask_lr']            = parameters[2]
     config['re_epochs']             = parameters[3]
-    if model_type.startswith('Roberta'):
-        config['re_epochs']             = config['re_epochs'] + 30
     config['word_trigger_length']   = parameters[4]
     config['re_batch_size']         = 20
     config['n_re_imgs_per_label']   = 20
@@ -2000,8 +1998,6 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     tasks_per_run       = config['tasks_per_run']
     device              = config['device']
 
-    print('ner config', config)
-
     # load the classification model and move it to the GPU
     # model = torch.load(model_filepath, map_location=torch.device('cuda'))
     full_model = torch.load(model_filepath, map_location=torch.device(device))
@@ -2022,6 +2018,12 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     model = full_model.classifier
     num_classes = list(model.named_modules())[0][1].out_features
     print('num_classes', num_classes)
+
+    if model_type.startswith('Roberta'):
+        config['re_epochs']             = config['re_epochs'] + 30
+
+    print('ner config', config)
+
     word_trigger_length = config['word_trigger_length']
 
     # same for the 3 basic types
