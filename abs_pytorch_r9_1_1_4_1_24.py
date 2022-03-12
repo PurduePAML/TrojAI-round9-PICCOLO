@@ -2055,7 +2055,7 @@ def sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
 
         # special rules for Roberta
         if emb_id == 2:
-            full_bounds = pickle.load(open(os.path.join(learned_parameters_dirpath, 'bounds_sc1.pkl'), 'rb'))
+            full_bounds = pickle.load(open(os.path.join(learned_parameters_dirpath, 'roberta_bounds_sc1.pkl'), 'rb'))
             bounds =  full_bounds[int(roberta_x[0,0])]
             pred = False
             for j in range(len(bounds)):

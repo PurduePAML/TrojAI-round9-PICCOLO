@@ -43,13 +43,13 @@ import warnings
 
 from abs_pytorch_r9_1_1_4_1_24 import sc_trojan_detector
 # from abs_pytorch_r9_1_1_4_2_3_16 import ner_trojan_detector
-from abs_pytorch_r9_1_1_4_2_11 import ner_trojan_detector
-from abs_pytorch_r9_1_1_4_3_3_8 import qa_trojan_detector
+from abs_pytorch_r9_1_1_4_2_11_2 import ner_trojan_detector
+from abs_pytorch_r9_1_1_4_3_3_8_2 import qa_trojan_detector
 
 warnings.filterwarnings("ignore")
 
 if not for_submission:
-    os.environ["CUDA_VISIBLE_DEVICES"] = "2"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "5"
 
 random_seed = 333
 torch.backends.cudnn.enabled = False
@@ -714,14 +714,17 @@ def configure(output_parameters_dirpath,
 
 
         if task_type == 'qa':
-            signs = [True, False, True, True]
+            bounds_fname = '{0}/roberta_bounds_{1}2.pkl'.format(output_parameters_dirpath, task_type)
+            signs = [False, False, False, False, ]
         elif task_type == 'sc':
+            bounds_fname = '{0}/roberta_bounds_{1}1.pkl'.format(output_parameters_dirpath, task_type)
             signs = [False for _ in range(6)]
         else:
-            signs = [True, False, True, True, True, False]
+            bounds_fname = '{0}/roberta_bounds_{1}2.pkl'.format(output_parameters_dirpath, task_type)
+            signs = [True, True, True, True, False, False]
         # train roberta bounds
         preds, confs, train_confs, full_bounds = train_bounds(roberta_xs, roberta_ys, roberta_xs, roberta_ys, signs)
-        pickle.dump(full_bounds, open('{0}/bounds_{1}1.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
+        pickle.dump(full_bounds, open(bounds_fname, 'wb'))
 
 
 
