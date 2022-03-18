@@ -1642,13 +1642,65 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_one_hots, 
             ce_loss_infos = []
             tre_epochs = 10
             if model_type.startswith('Roberta'):
-                tre_epochs = 30
-            if tbase_labels[0] == 0:
-                inject_options = [0,1,2]
+                if tbase_labels[0] == 0:
+                    inject_options = [1,2]
+                else:
+                    inject_options = [2]
             else:
-                inject_options = [0,2]
-            for inject_option  in inject_options:
-            
+                if tbase_labels[0] == 0:
+                    inject_options = [0,1,2]
+                else:
+                    inject_options = [0,2]
+            if len(inject_options) > 1:
+                for inject_option  in inject_options:
+                
+                    if tbase_labels[0] == 0:
+                    # if False:
+                        
+                        poisoned_data, poisoned_data1, poisoned_data2 = inject_on_data(tokenizer, clean_json, word_trigger_length*word_token_length, insert_type, scratch_dirpath, print_option=False, pos_condition=tTroj_Layers[0], inject_option=inject_option)[:3]
+                        embeds2 = model.get_input_embeddings()(poisoned_data2['input_ids'].cuda()).cpu().detach().numpy()
+                        if model_type.startswith('DistilBert'):
+                            pos_embeds2 = get_pos_embs(poisoned_data2['input_ids'], model.distilbert.embeddings.position_embeddings, device)
+                        else:
+                            pos_embeds2 = None
+
+                        accs, base_accs, ce_loss0, logits_loss0, rdeltas, delta_infos, base_ce_loss, base_logits_loss = reverse_engineer(model_type, model, benign_models, benign_logits0, benign_one_hots, benign_data, children, embeds2, pos_embeds2, poisoned_data2, weights_file, Troj_Layer, tTroj_Neurons, tsamp_labels, tbase_labels, tre_epochs, ctask_batch_size, max_seq_length, depth, delta_depth, gt_trigger_idxs, use_idxs, word_token_matrix, neutral_words, config, inject_option)
+
+                        # sys.exit()
+                    else:
+
+                        poisoned_data, poisoned_data1, poisoned_data2 = inject_on_data(tokenizer, clean_json, word_trigger_length*word_token_length, insert_type, scratch_dirpath, print_option=False, pos_condition=tTroj_Layers[0], inject_option=inject_option)[:3]
+                        embeds3 = model.get_input_embeddings()(poisoned_data1['input_ids'].cuda()).cpu().detach().numpy()
+                        embeds1 = model.get_input_embeddings()(poisoned_data['input_ids'].cuda()).cpu().detach().numpy()
+
+                        if model_type.startswith('DistilBert'):
+                            pos_embeds3 = get_pos_embs(poisoned_data1['input_ids'], model.distilbert.embeddings.position_embeddings, device)
+                            pos_embeds1 = get_pos_embs(poisoned_data['input_ids'], model.distilbert.embeddings.position_embeddings, device)
+                        else:
+                            pos_embeds3 = None
+                            pos_embeds1 = None
+
+                        accs, base_accs, ce_loss0, logits_loss0, rdeltas, delta_infos, base_ce_loss, base_logits_loss = reverse_engineer(model_type, model, benign_models, benign_logits0, benign_one_hots, benign_data, children, embeds1, pos_embeds1, poisoned_data, weights_file, Troj_Layer, tTroj_Neurons, tsamp_labels, tbase_labels, tre_epochs, ctask_batch_size, max_seq_length, depth, delta_depth, gt_trigger_idxs, use_idxs, word_token_matrix, neutral_words, config, inject_option)
+                        # accs, base_accs, ce_loss0, logits_loss0, rdeltas, delta_infos = reverse_engineer(model_type, model, benign_models, benign_logits0, benign_one_hots, benign_data, children, embeds3, pos_embeds3, poisoned_data1, weights_file, Troj_Layer, tTroj_Neurons, tsamp_labels, tbase_labels, tre_epochs, ctask_batch_size, max_seq_length, depth, delta_depth, gt_trigger_idxs, use_idxs, word_token_matrix, neutral_words, inject_option)
+
+                    # ce_loss_infos.append(ce_loss0)
+                    ce_loss_infos.append(ce_loss0 - base_ce_loss)
+
+                ce_loss_infos = np.array(ce_loss_infos)
+                inject_option = inject_options[np.argmin(ce_loss_infos)]
+                print('-'*19, 'ce loss infos', ce_loss_infos, 'final inject_option', inject_option, 'base label', tbase_labels[0], )
+            else:
+                inject_option = inject_options[0]
+                print('-'*19, 'ce loss infos', ce_loss_infos, 'final inject_option', inject_option, 'base label', tbase_labels[0], )
+
+            if model_type.startswith('Roberta'):
+                inject_options = [0, inject_option]
+            else:
+                inject_options = [inject_option]
+
+
+            final_rdeltas = []
+            for inject_option in inject_options:
                 if tbase_labels[0] == 0:
                 # if False:
                     
@@ -1659,7 +1711,7 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_one_hots, 
                     else:
                         pos_embeds2 = None
 
-                    accs, base_accs, ce_loss0, logits_loss0, rdeltas, delta_infos, base_ce_loss, base_logits_loss = reverse_engineer(model_type, model, benign_models, benign_logits0, benign_one_hots, benign_data, children, embeds2, pos_embeds2, poisoned_data2, weights_file, Troj_Layer, tTroj_Neurons, tsamp_labels, tbase_labels, tre_epochs, ctask_batch_size, max_seq_length, depth, delta_depth, gt_trigger_idxs, use_idxs, word_token_matrix, neutral_words, config, inject_option)
+                    accs, base_accs, ce_loss0, logits_loss0, rdeltas, delta_infos, base_ce_loss, base_logits_loss = reverse_engineer(model_type, model, benign_models, benign_logits0, benign_one_hots, benign_data, children, embeds2, pos_embeds2, poisoned_data2, weights_file, Troj_Layer, tTroj_Neurons, tsamp_labels, tbase_labels, re_epochs, ctask_batch_size, max_seq_length, depth, delta_depth, gt_trigger_idxs, use_idxs, word_token_matrix, neutral_words, config, inject_option)
 
                     # sys.exit()
                 else:
@@ -1675,63 +1727,31 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_one_hots, 
                         pos_embeds3 = None
                         pos_embeds1 = None
 
-                    accs, base_accs, ce_loss0, logits_loss0, rdeltas, delta_infos, base_ce_loss, base_logits_loss = reverse_engineer(model_type, model, benign_models, benign_logits0, benign_one_hots, benign_data, children, embeds1, pos_embeds1, poisoned_data, weights_file, Troj_Layer, tTroj_Neurons, tsamp_labels, tbase_labels, tre_epochs, ctask_batch_size, max_seq_length, depth, delta_depth, gt_trigger_idxs, use_idxs, word_token_matrix, neutral_words, config, inject_option)
-                    # accs, base_accs, ce_loss0, logits_loss0, rdeltas, delta_infos = reverse_engineer(model_type, model, benign_models, benign_logits0, benign_one_hots, benign_data, children, embeds3, pos_embeds3, poisoned_data1, weights_file, Troj_Layer, tTroj_Neurons, tsamp_labels, tbase_labels, tre_epochs, ctask_batch_size, max_seq_length, depth, delta_depth, gt_trigger_idxs, use_idxs, word_token_matrix, neutral_words, inject_option)
+                    accs, base_accs, ce_loss0, logits_loss0, rdeltas, delta_infos, base_ce_loss, base_logits_loss = reverse_engineer(model_type, model, benign_models, benign_logits0, benign_one_hots, benign_data, children, embeds1, pos_embeds1, poisoned_data, weights_file, Troj_Layer, tTroj_Neurons, tsamp_labels, tbase_labels, re_epochs, ctask_batch_size, max_seq_length, depth, delta_depth, gt_trigger_idxs, use_idxs, word_token_matrix, neutral_words, config, inject_option)
+                    # accs, base_accs, ce_loss0, logits_loss0, rdeltas, delta_infos = reverse_engineer(model_type, model, benign_models, benign_logits0, benign_one_hots, benign_data, children, embeds3, pos_embeds3, poisoned_data1, weights_file, Troj_Layer, tTroj_Neurons, tsamp_labels, tbase_labels, re_epochs, ctask_batch_size, max_seq_length, depth, delta_depth, gt_trigger_idxs, use_idxs, word_token_matrix, neutral_words)
 
-                # ce_loss_infos.append(ce_loss0)
-                ce_loss_infos.append(ce_loss0 - base_ce_loss)
+                print('delta_infos', len(delta_infos),)
+                full_deltas =[]
+                for delta_i in range(len(delta_infos)):
+                    tword_delta, tlogits_loss, tce_loss = delta_infos[delta_i]
+                    # if tce_loss < 1.3 * ce_loss0:
+                    if tlogits_loss > 0.98 * logits_loss0:
+                        print(delta_i, tlogits_loss, tce_loss, np.sum(tword_delta, axis=1))
+                        full_deltas.append(tword_delta)
+                        # for i in range(tword_delta.shape[0]):
+                        #     for j in range(len(gt_trigger_idxs)):
+                        #         print(gt_trigger_idxs[j], 'position i', i, tword_delta[i][gt_trigger_idxs[j]], 'rank', np.where(np.argsort(tword_delta[i])[::-1] == gt_trigger_idxs[j])[0] )
+                    elif len(delta_infos) == delta_i + 1:
+                        full_deltas.append(tword_delta)
+                full_deltas = np.concatenate(full_deltas, axis=0)
+                full_deltas = np.expand_dims(full_deltas, axis=0)
+                print('full_deltas', full_deltas.shape)
+                rdeltas = full_deltas
+                final_rdeltas.append(rdeltas)
+                # # sys.exit()
 
-            ce_loss_infos = np.array(ce_loss_infos)
-            inject_option = inject_options[np.argmin(ce_loss_infos)]
-            print('-'*19, 'ce loss infos', ce_loss_infos, 'final inject_option', inject_option, 'base label', tbase_labels[0], )
-
-            if tbase_labels[0] == 0:
-            # if False:
-                
-                poisoned_data, poisoned_data1, poisoned_data2 = inject_on_data(tokenizer, clean_json, word_trigger_length*word_token_length, insert_type, scratch_dirpath, print_option=False, pos_condition=tTroj_Layers[0], inject_option=inject_option)[:3]
-                embeds2 = model.get_input_embeddings()(poisoned_data2['input_ids'].cuda()).cpu().detach().numpy()
-                if model_type.startswith('DistilBert'):
-                    pos_embeds2 = get_pos_embs(poisoned_data2['input_ids'], model.distilbert.embeddings.position_embeddings, device)
-                else:
-                    pos_embeds2 = None
-
-                accs, base_accs, ce_loss0, logits_loss0, rdeltas, delta_infos, base_ce_loss, base_logits_loss = reverse_engineer(model_type, model, benign_models, benign_logits0, benign_one_hots, benign_data, children, embeds2, pos_embeds2, poisoned_data2, weights_file, Troj_Layer, tTroj_Neurons, tsamp_labels, tbase_labels, re_epochs, ctask_batch_size, max_seq_length, depth, delta_depth, gt_trigger_idxs, use_idxs, word_token_matrix, neutral_words, config, inject_option)
-
-                # sys.exit()
-            else:
-
-                poisoned_data, poisoned_data1, poisoned_data2 = inject_on_data(tokenizer, clean_json, word_trigger_length*word_token_length, insert_type, scratch_dirpath, print_option=False, pos_condition=tTroj_Layers[0], inject_option=inject_option)[:3]
-                embeds3 = model.get_input_embeddings()(poisoned_data1['input_ids'].cuda()).cpu().detach().numpy()
-                embeds1 = model.get_input_embeddings()(poisoned_data['input_ids'].cuda()).cpu().detach().numpy()
-
-                if model_type.startswith('DistilBert'):
-                    pos_embeds3 = get_pos_embs(poisoned_data1['input_ids'], model.distilbert.embeddings.position_embeddings, device)
-                    pos_embeds1 = get_pos_embs(poisoned_data['input_ids'], model.distilbert.embeddings.position_embeddings, device)
-                else:
-                    pos_embeds3 = None
-                    pos_embeds1 = None
-
-                accs, base_accs, ce_loss0, logits_loss0, rdeltas, delta_infos, base_ce_loss, base_logits_loss = reverse_engineer(model_type, model, benign_models, benign_logits0, benign_one_hots, benign_data, children, embeds1, pos_embeds1, poisoned_data, weights_file, Troj_Layer, tTroj_Neurons, tsamp_labels, tbase_labels, re_epochs, ctask_batch_size, max_seq_length, depth, delta_depth, gt_trigger_idxs, use_idxs, word_token_matrix, neutral_words, config, inject_option)
-                # accs, base_accs, ce_loss0, logits_loss0, rdeltas, delta_infos = reverse_engineer(model_type, model, benign_models, benign_logits0, benign_one_hots, benign_data, children, embeds3, pos_embeds3, poisoned_data1, weights_file, Troj_Layer, tTroj_Neurons, tsamp_labels, tbase_labels, re_epochs, ctask_batch_size, max_seq_length, depth, delta_depth, gt_trigger_idxs, use_idxs, word_token_matrix, neutral_words)
-
-            print('delta_infos', len(delta_infos),)
-            full_deltas =[]
-            for delta_i in range(len(delta_infos)):
-                tword_delta, tlogits_loss, tce_loss = delta_infos[delta_i]
-                # if tce_loss < 1.3 * ce_loss0:
-                if tlogits_loss > 0.98 * logits_loss0:
-                    print(delta_i, tlogits_loss, tce_loss, np.sum(tword_delta, axis=1))
-                    full_deltas.append(tword_delta)
-                    # for i in range(tword_delta.shape[0]):
-                    #     for j in range(len(gt_trigger_idxs)):
-                    #         print(gt_trigger_idxs[j], 'position i', i, tword_delta[i][gt_trigger_idxs[j]], 'rank', np.where(np.argsort(tword_delta[i])[::-1] == gt_trigger_idxs[j])[0] )
-                elif len(delta_infos) == delta_i + 1:
-                    full_deltas.append(tword_delta)
-            full_deltas = np.concatenate(full_deltas, axis=0)
-            full_deltas = np.expand_dims(full_deltas, axis=0)
-            print('full_deltas', full_deltas.shape)
-            rdeltas = full_deltas
-            # sys.exit()
+            rdeltas = np.concatenate(final_rdeltas, axis=1)
+            print('final deltas', rdeltas.shape)
 
             # require ctask_batch_size to be 1
             assert ctask_batch_size == 1
@@ -1753,10 +1773,21 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_one_hots, 
                 # if acc >= reasr_bound:
                 # if acc >= 0.3:
                 if True:
-                    asrs, rdelta_idxs, rdelta_words, = test_trigger_pos(models, benign_models, rdelta, clean_json, base_label, scratch_dirpath, model_type, word_token_matrix0, neutral_words, Troj_Layer, inject_option, config)
-                    asrs = np.array(asrs)
-                    print('test base_label', base_label, 'sample label', samp_label, asrs)
-                    final_result = (rdelta, RE_img, RE_mask, RE_delta, samp_label, base_label, acc, base_acc, asrs, ce_loss0, rdelta_idxs, rdelta_words)
+                    full_asrs = []
+                    for inject_option in inject_options:
+                        asrs, rdelta_idxs, rdelta_words, = test_trigger_pos(models, benign_models, rdelta, clean_json, base_label, scratch_dirpath, model_type, word_token_matrix0, neutral_words, Troj_Layer, inject_option, config)
+                        asrs = np.array(asrs)
+                        print('asrs', asrs.shape)
+                        full_asrs.append(asrs)
+
+                    final_asrs = np.zeros((5,4))
+                    final_asrs[:2,:] = np.amax(np.array(full_asrs)[:,:2,:], axis=0)
+                    final_asrs[2:,:] = np.amin(np.array(full_asrs)[:,2:,:], axis=0)
+
+                    asrs= final_asrs
+
+                    print('test base_label', base_label, 'sample label', samp_label, asrs.shape, asrs)
+                    final_result = (rdelta, RE_img, RE_mask, RE_delta, samp_label, base_label, acc, base_acc, asrs, ce_loss0, rdelta_idxs, rdelta_words, Troj_Layer, inject_option)
                     validated_results.append( final_result )
 
         return validated_results
@@ -2904,7 +2935,7 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
         with open(os.path.join(model_dirpath, 'config.json')) as json_file:
             model_config = json.load(json_file)
         if model_config['trigger'] is not None:
-            gt_trigger_text = model_config['trigger']['trigger_executor']['trigger_text']
+            gt_trigger_text = model_config['trigger']['trigger_executor']['trigger_text'].lower()
             print('trigger', gt_trigger_text, )
             # trigger_idxs = (16040,)
             if model_type.startswith('Electra') or model_type.startswith('DistilBert'):
@@ -3116,6 +3147,8 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
             # token_use_idxs += np.argsort(cos)[:1000].tolist()
             # token_use_idxs += np.argsort(cos)[:2000].tolist()
             token_use_idxs += np.argsort(cos)[:500].tolist()
+            if model_type.startswith('Roberta'):
+                token_use_idxs += np.argsort(cos)[:1500].tolist()
             # token_use_idxs += np.argsort(cos)[:50].tolist()
             # token_use_idxs += np.argsort(cos)[:10000].tolist()
             top10_token_use_idxs += np.argsort(cos)[:10].tolist()
@@ -3305,8 +3338,9 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
     ce_loss_infos = []
     max_reasrs = []
     features = []
+    ce_loss_infos1 = np.zeros((6*3)) + 10
     for result in results:
-        rdelta, RE_img, RE_mask, RE_delta, samp_label, base_label, acc, base_acc, asrs,ce_loss0, rdelta_idxs, rdelta_words = result
+        rdelta, RE_img, RE_mask, RE_delta, samp_label, base_label, acc, base_acc, asrs,ce_loss0, rdelta_idxs, rdelta_words, pos_condition, inject_option = result
 
         reasr = acc
         reasr_per_label = base_acc
@@ -3362,7 +3396,7 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
                 max_len1_loss1, max_len2_loss1, max_len3_loss1, max_len4_loss1, \
                 max_len1_loss2, max_len2_loss2, max_len3_loss2, max_len4_loss2, \
                 max_len1_loss3, max_len2_loss3, max_len3_loss3, max_len4_loss3, \
-                'mask', str(samp_label), str(base_label), RE_img, RE_mask, RE_delta, \
+                'mask', str(samp_label), str(base_label), str(inject_option), RE_img, RE_mask, RE_delta, \
                 accs_str, rdelta_words_str, rdelta_idxs_str, len1_idxs_str1, len2_idxs_str1, len3_idxs_str1, len1_idxs_str2, len2_idxs_str2, len3_idxs_str2,\
                 '{:.4f}'.format(ce_loss0), poisoned_data['input_ids'].shape[0] ])
 
@@ -3373,7 +3407,18 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
         max_reasrs += [max_len1_asrs1, max_len2_asrs1, max_len3_asrs1, max_len4_asrs1] 
         max_reasrs += [max_len1_asrs2, max_len2_asrs2, max_len3_asrs2, max_len4_asrs2] 
 
-    features = [emb_id,] + max_reasrs + loss_infos + ce_loss_infos
+        if pos_condition == 1:
+            ce_loss_idx = base_label * 3 + inject_option
+        else:
+            ce_loss_idx = 9 + base_label * 3 + inject_option
+        ce_loss_infos1[ce_loss_idx] = float('{:.4f}'.format(ce_loss0))
+
+    if model_type.startswith('Roberta'):
+        features = [emb_id,] + max_reasrs + loss_infos + list(ce_loss_infos1)
+    else:
+        features = [emb_id,] + max_reasrs + loss_infos + ce_loss_infos
+
+    print('ce loss infos', ce_loss_infos)
 
     features += list(np.array(nasrs0))
     features += list(np.array(nces0))
@@ -3402,10 +3447,16 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
     asr = np.concatenate([asr[:,:2], asr[:,4:6],], axis=1)
     loss1 = np.array(x[49:49+6*12]).reshape((6,12))
     loss1 = np.concatenate([loss1[:,:2], loss1[:,4:6], loss1[:,8:10],], axis=1)
-    loss2 = np.array(x[49+6*12:49+6*12+6]).reshape((6))
 
-    asr0 = np.array(x[49+6*12+6:49+6*12+6+4*8]).reshape((4,8))
-    loss0 = np.array(x[49+6*12+6+4*8:]).reshape((4,12))
+    if model_type.startswith('Roberta'):
+        loss2 = np.array(x[49+6*12:49+6*12+18]).reshape((18))
+        asr0 = np.array(x[49+6*12+18:49+6*12+18+4*8]).reshape((4,8))
+        loss0 = np.array(x[49+6*12+18+4*8:]).reshape((4,12))
+    else:
+        loss2 = np.array(x[49+6*12:49+6*12+6]).reshape((6))
+        asr0 = np.array(x[49+6*12+6:49+6*12+6+4*8]).reshape((4,8))
+        loss0 = np.array(x[49+6*12+6+4*8:]).reshape((4,12))
+
     asr0 = np.concatenate([asr0[:,:2], asr0[:,4:6],], axis=1)
     loss0 = np.concatenate([loss0[:,:2], loss0[:,4:6], loss0[:,8:10],], axis=1)
     asr0_1 = np.amax(asr0[:2], axis=0)
@@ -3422,19 +3473,20 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
     xs = np.array([features])
 
     # roberta_x = [x[0], np.amax(np.concatenate([asr[1:3], asr[4:6]])) , np.amin(np.concatenate([loss1[0:1], loss1[3:4]])), np.amax(asr0_1), np.amax(asr0_2)]
-    roberta_x = [x[0], np.amin(np.concatenate([loss1[1:3], loss1[4:6]])) , np.amin(np.concatenate([loss1[0:1], loss1[3:4]])), np.amin(loss0_1), np.amin(loss0_2), ]
+    # roberta_x = [x[0], np.amin(np.concatenate([loss1[1:3], loss1[4:6]])) , np.amin(np.concatenate([loss1[0:1], loss1[3:4]])), np.amin(loss0_1), np.amin(loss0_2), ]
+    roberta_x = [x[0], np.amax(np.concatenate([asr[1:3], asr[4:6]])) , np.amin(np.concatenate([loss1[0:1], loss1[3:4]])), np.amin(loss0_1), ]
     roberta_x = np.array([roberta_x])
 
     if not is_configure:
-        cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_qa2.pkl'), 'rb'))
-        confs = cls.predict_proba(xs)[:,1]
-        confs = np.clip(confs, 0.025, 0.975)
-        print('confs', confs)
-        output = confs[0]
-
-        # special rules for Roberta
-        if emb_id == 2:
-            full_bounds = pickle.load(open(os.path.join(learned_parameters_dirpath, 'roberta_bounds_qa2.pkl'), 'rb'))
+        if not model_type.startswith('Roberta'):
+            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_qa2.pkl'), 'rb'))
+            confs = cls.predict_proba(xs)[:,1]
+            confs = np.clip(confs, 0.025, 0.975)
+            print('confs', confs)
+            output = confs[0]
+        else:
+            # special rules for Roberta
+            full_bounds = pickle.load(open(os.path.join(learned_parameters_dirpath, 'roberta_bounds_qa3.pkl'), 'rb'))
             bounds =  full_bounds[int(roberta_x[0,0])]
             preds = []
             for j in range(len(bounds)):
@@ -3455,8 +3507,6 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
                 output = 0.905
             elif preds[2]:
                 output = 0.915
-            elif preds[3]:
-                output = 0.925
             else:
                 output = 0.12
             print('preds', preds)

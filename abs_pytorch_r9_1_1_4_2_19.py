@@ -864,7 +864,11 @@ def reverse_engineer(model_type, models, benign_models, benign_logits0, benign_e
         # if delta_sum_loss_weight > 0:
         #     optimizer.state = collections.defaultdict(dict)
 
-        if faccs[0] >= best_accs[0] and e >= 35:
+        if model_type.startswith('Roberta'):
+            save_cond = ce_loss.cpu().detach().numpy() < best_ce_loss and faccs[0] >= best_accs[0] and e >= 35
+        else:
+            save_cond = faccs[0] >= best_accs[0] and e >= 35
+        if save_cond:
             print('update', e, logits_loss.cpu().detach().numpy(),  best_logits_loss, faccs)
             best_delta = use_delta.cpu().detach().numpy()
             best_word_delta = word_delta.cpu().detach().numpy()
@@ -1032,6 +1036,8 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_embeds, be
 
         sorted_k_arm_results = sorted(k_arm_results, key=lambda x: x[4])[::-1]
         # sorted_k_arm_results = sorted(k_arm_results, key=lambda x: x[6])
+        if model_type.startswith('Roberta'):
+            sorted_k_arm_results = sorted(k_arm_results, key=lambda x: x[6])[::-1]
         top_k_arm_results = sorted_k_arm_results[0]
 
         print('top_k_arm_results', top_k_arm_results)
@@ -1956,7 +1962,6 @@ def inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, tr
 
 def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, parameters):
     start = time.time()
-
     
     print('ner parameters', parameters)
 
@@ -1994,8 +1999,6 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     tasks_per_run       = config['tasks_per_run']
     device              = config['device']
 
-    print('ner config', config)
-
     # load the classification model and move it to the GPU
     # model = torch.load(model_filepath, map_location=torch.device('cuda'))
     full_model = torch.load(model_filepath, map_location=torch.device(device))
@@ -2016,8 +2019,13 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     model = full_model.classifier
     num_classes = list(model.named_modules())[0][1].out_features
     print('num_classes', num_classes)
-    word_trigger_length = config['word_trigger_length']
 
+    if model_type.startswith('Roberta'):
+        config['re_epochs']             = config['re_epochs'] + 30
+
+    print('ner config', config)
+
+    word_trigger_length = config['word_trigger_length']
     # same for the 3 basic types
     children = list(model.children())
     target_layers = ['Linear']
@@ -2843,7 +2851,7 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     features = nx
     xs = np.array([features])
 
-    roberta_x = [emb_id, np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-16:-8]) , opt_ces[9*3+1], ]
+    roberta_x = [emb_id, np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-16:-8]) , opt_ces[9*3] , opt_ces[9*3+3], ]
     roberta_x = np.array([roberta_x])
 
     if not is_configure:
@@ -2855,7 +2863,7 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
 
         # special rules for Roberta
         if emb_id == 2:
-            full_bounds = pickle.load(open(os.path.join(learned_parameters_dirpath, 'bounds_ner1.pkl'), 'rb'))
+            full_bounds = pickle.load(open(os.path.join(learned_parameters_dirpath, 'roberta_bounds_ner2.pkl'), 'rb'))
             bounds =  full_bounds[int(roberta_x[0,0])]
             pred = False
             for j in range(len(bounds)):
