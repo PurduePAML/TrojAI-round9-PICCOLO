@@ -44,7 +44,7 @@ import warnings
 from abs_pytorch_r9_1_1_4_1_24 import sc_trojan_detector
 # from abs_pytorch_r9_1_1_4_2_3_16 import ner_trojan_detector
 from abs_pytorch_r9_1_1_4_2_19 import ner_trojan_detector
-from abs_pytorch_r9_1_1_4_3_3_13_5 import qa_trojan_detector
+from abs_pytorch_r9_1_1_4_3_3_13_4_2 import qa_trojan_detector
 
 warnings.filterwarnings("ignore")
 
@@ -720,7 +720,7 @@ def configure(output_parameters_dirpath,
             bounds_fname = '{0}/roberta_bounds_{1}1.pkl'.format(output_parameters_dirpath, task_type)
             signs = [False for _ in range(6)]
         else:
-            bounds_fname = '{0}/roberta_bounds_{1}2.pkl'.format(output_parameters_dirpath, task_type)
+            bounds_fname = '{0}/roberta_bounds_{1}3.pkl'.format(output_parameters_dirpath, task_type)
             signs = [True, True, True, True, False, False]
         # train roberta bounds
         preds, confs, train_confs, full_bounds = train_bounds(roberta_xs, roberta_ys, roberta_xs, roberta_ys, signs)
