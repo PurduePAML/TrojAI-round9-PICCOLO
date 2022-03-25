@@ -43,13 +43,13 @@ import warnings
 
 from abs_pytorch_r9_1_1_4_1_24 import sc_trojan_detector
 # from abs_pytorch_r9_1_1_4_2_3_16 import ner_trojan_detector
-from abs_pytorch_r9_1_1_4_2_19 import ner_trojan_detector
-from abs_pytorch_r9_1_1_4_3_3_13_4_2 import qa_trojan_detector
+from abs_pytorch_r9_1_1_4_2_11_2 import ner_trojan_detector
+from abs_pytorch_r9_1_1_4_3_3_13_5 import qa_trojan_detector
 
 warnings.filterwarnings("ignore")
 
 if not for_submission:
-    os.environ["CUDA_VISIBLE_DEVICES"] = "6"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 random_seed = 333
 torch.backends.cudnn.enabled = False
@@ -62,7 +62,7 @@ random.seed(random_seed)
 
 def defer_output(output, model_type):
 
-    output = np.clip(output, 0.115, 0.885)
+    # output = np.clip(output, 0.115, 0.885)
 
     ten_digit = np.floor(output * 10)
 
@@ -163,7 +163,8 @@ def example_trojan_detector(model_filepath,
     print('model type', model_type, 'time', end_time - start_time)
 
     # output differetidifferetiation
-    if not model_type.startswith('Roberta'):
+    # if not model_type.startswith('Roberta'):
+    if True:
         output = defer_output(output, model_type)
     else:
         print(model_type, 'output', output)
@@ -722,12 +723,23 @@ def configure(output_parameters_dirpath,
         else:
             bounds_fname = '{0}/roberta_bounds_{1}3.pkl'.format(output_parameters_dirpath, task_type)
             signs = [True, True, True, True, False, False]
+
         # train roberta bounds
         preds, confs, train_confs, full_bounds = train_bounds(roberta_xs, roberta_ys, roberta_xs, roberta_ys, signs)
         pickle.dump(full_bounds, open(bounds_fname, 'wb'))
 
 
+        if task_type == 'qa':
+            roberta_cls_fname = '{0}/roberta_lr_roberta_{1}1.pkl'.format(output_parameters_dirpath, task_type)
+        elif task_type == 'sc':
+            roberta_cls_fname = '{0}/roberta_lr_roberta_{1}1.pkl'.format(output_parameters_dirpath, task_type)
+        else:
+            roberta_cls_fname = '{0}/roberta_lr_roberta_{1}1.pkl'.format(output_parameters_dirpath, task_type)
 
+        # train roberta cls
+        roberta_cls = RandomForestClassifier(n_estimators=ne, max_depth=md, criterion='entropy', warm_start=False, bootstrap=False, )
+        roberta_cls.fit(roberta_xs, roberta_ys)
+        pickle.dump(roberta_cls, open(roberta_cls_fname, 'wb'))
 
 if __name__ == "__main__":
     from jsonargparse import ArgumentParser, ActionConfigFile

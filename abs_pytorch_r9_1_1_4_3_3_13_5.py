@@ -1774,8 +1774,8 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_one_hots, 
                 # if acc >= 0.3:
                 if True:
                     full_asrs = []
-                    # for inject_option in inject_options:
-                    if True:
+                    for inject_option in inject_options:
+                    # if True:
                         asrs, rdelta_idxs, rdelta_words, = test_trigger_pos(models, benign_models, rdelta, clean_json, base_label, scratch_dirpath, model_type, word_token_matrix0, neutral_words, Troj_Layer, inject_option, config)
                         asrs = np.array(asrs)
                         print('asrs', asrs.shape)
@@ -3475,7 +3475,8 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
 
     # roberta_x = [x[0], np.amax(np.concatenate([asr[1:3], asr[4:6]])) , np.amin(np.concatenate([loss1[0:1], loss1[3:4]])), np.amax(asr0_1), np.amax(asr0_2)]
     # roberta_x = [x[0], np.amin(np.concatenate([loss1[1:3], loss1[4:6]])) , np.amin(np.concatenate([loss1[0:1], loss1[3:4]])), np.amin(loss0_1), np.amin(loss0_2), ]
-    roberta_x = [x[0], np.amax(np.concatenate([asr[1:3], asr[4:6]])) , np.amin(np.concatenate([loss1[0:1], loss1[3:4]])), np.amin(loss0_1), ]
+    # roberta_x = [x[0], np.amax(np.concatenate([asr[1:3], asr[4:6]])) , np.amin(np.concatenate([loss1[0:1], loss1[3:4]])), np.amin(loss0_1), ]
+    roberta_x = x[:1] + list(np.amin(np.array([loss1[:3,:], loss1[3:,:]]), axis=0).reshape(-1)) + list(np.amin(loss2.reshape((6,3)), axis=1) ) + list(loss0_1) + list(loss0_2)
     roberta_x = np.array([roberta_x])
 
     if not is_configure:
@@ -3487,30 +3488,11 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
             output = confs[0]
         else:
             # special rules for Roberta
-            full_bounds = pickle.load(open(os.path.join(learned_parameters_dirpath, 'roberta_bounds_qa3.pkl'), 'rb'))
-            bounds =  full_bounds[int(roberta_x[0,0])]
-            preds = []
-            for j in range(len(bounds)):
-                s, b = bounds[j]
-                if s :
-                    if roberta_x[0,j+1] > b:
-                        preds.append(True)
-                    else:
-                        preds.append(False)
-                else:
-                    if roberta_x[0,j+1] < b:
-                        preds.append(True)
-                    else:
-                        preds.append(False)
-            if preds[0]:
-                output = 0.895
-            elif preds[1]:
-                output = 0.905
-            elif preds[2]:
-                output = 0.915
-            else:
-                output = 0.12
-            print('preds', preds)
+            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_roberta_qa1.pkl'), 'rb'))
+            confs = cls.predict_proba(roberta_x)[:,1]
+            confs = np.clip(confs, 0.025, 0.975)
+            print('confs', confs)
+            output = confs[0]
 
     print('full features', features)
     print('roberta features', roberta_x)
