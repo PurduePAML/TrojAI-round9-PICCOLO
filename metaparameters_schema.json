@@ -5,7 +5,7 @@
   "technique_description": "This is a trigger reverse engineering technique on NLP models. PICCOLO first reverse-engineers a list of candidate trigger words and then uses beam search to search for the best pair of trigger words with highest ASR or lowest loss. Then it trains a classifier on ASR and loss of the reverse-engineered trigger words. At last, it uses a classifier output to determine if a model is trojaned.",
   "technique_changes": "To alleviate the overfitting problem, include round 8 and round 7 models in training classifier on Roberta NER and Roberta QA.",
   "repo_name": "https://github.com/PurduePAML/TrojAI-round9-PICCOLO",
-  "commit_id": "45b10a0c1c218e94ec42a76e1956dbdc1f944037",
+  "commit_id": "9113de4746fe5d6bc20dc8c92899ab389917c8c0",
   "required": [ "sc_re_mask_lr", "sc_re_epochs", "sc_word_trigger_length", "ner_re_mask_lr", "ner_re_epochs", "ner_word_trigger_length", "qa_re_mask_lr", "qa_re_epochs", "qa_word_trigger_length" ],
   "additionalProperties": false,
   "type": "object",
