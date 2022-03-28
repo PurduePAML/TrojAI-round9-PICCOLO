@@ -2851,7 +2851,7 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
 
     # roberta_x = [emb_id] + list(test_ces.reshape(-1))\
     #         + [np.max(test_asrs[:2]), np.max(test_asrs[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-16:-8])]
-    roberta_x = [np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-16:-8])]
+    roberta_x = [emb_id, np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-16:-8]) , opt_ces[9*3] , opt_ces[9*3+3], ]
     roberta_x = np.array([roberta_x])
 
     if not is_configure:
@@ -2863,11 +2863,23 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
             output = confs[0]
         else:
             # special rules for Roberta
-            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_roberta_ner2.pkl'), 'rb'))
-            confs = cls.predict_proba(roberta_x)[:,1]
-            confs = np.clip(confs, 0.025, 0.975)
-            print('confs', confs)
-            output = confs[0]
+            full_bounds = pickle.load(open(os.path.join(learned_parameters_dirpath, 'roberta_bounds_ner4.pkl'), 'rb'))
+            bounds =  full_bounds[int(roberta_x[0,0])]
+            pred = False
+            for j in range(len(bounds)):
+                s, b = bounds[j]
+                if s :
+                    if roberta_x[0,j+1] > b:
+                        pred = True
+                else:
+                    if roberta_x[0,j+1] < b:
+                        pred = True
+                if pred:
+                    break
+            if pred:
+                output = 0.945
+            else:
+                output = 0.12
 
     print('full features', features)
     print('roberta features', roberta_x)

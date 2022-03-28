@@ -62,28 +62,22 @@ random.seed(random_seed)
 
 def defer_output(output, model_type):
 
-    # output = np.clip(output, 0.115, 1)
+    output = np.clip(output, 0.115, 1)
 
     ten_digit = np.floor(output * 10)
 
     if model_type == 'ElectraForSequenceClassification':
         new_output = ten_digit/10. + 0.015
-        new_output = np.clip(output, 0.115, 1)
     elif model_type == 'DistilBertForSequenceClassification':
         new_output = ten_digit/10. + 0.025
-        new_output = np.clip(output, 0.115, 1)
     elif model_type == 'RobertaForSequenceClassification':
         new_output = ten_digit/10. + 0.035
-        new_output = np.clip(output, 0.115, 1)
     elif model_type == 'ElectraForTokenClassification':
         new_output = ten_digit/10. + 0.045
-        new_output = np.clip(output, 0.115, 1)
     elif model_type == 'DistilBertForTokenClassification':
         new_output = ten_digit/10. + 0.055
-        new_output = np.clip(output, 0.115, 1)
     elif model_type == 'RobertaForTokenClassification':
         new_output = ten_digit/10. + 0.065
-        new_output = np.clip(output, 0.115, 1)
     elif model_type == 'ElectraForQuestionAnswering':
         new_output = ten_digit/10. + 0.075
     elif model_type == 'DistilBertForQuestionAnswering':
@@ -297,22 +291,28 @@ def train_bounds(train_X, train_y, test_X, test_y, signs):
             if sign:
                 larger_tvs = []
                 for j in range(len(tvs[i])):
-                    if tvs[i][j] > np.amax(bvs[i]):
+                    # if tvs[i][j] > np.amax(bvs[i]):
+                    if tvs[i][j] > np.sort(bvs[i])[-2]:
                         larger_tvs.append(tvs[i][j])
                 if len(larger_tvs) > 0:
                     lowest_larger_tvs = np.amin(larger_tvs)
                 else:
-                    lowest_larger_tvs = np.amax(bvs[i]) + abs(np.amax(bvs[i]) - np.amax(tvs[i]))
+                    # lowest_larger_tvs = np.amax(bvs[i]) + abs(np.amax(bvs[i]) - np.amax(tvs[i]))
+                    # lowest_larger_tvs = np.amax(bvs[i]) + abs(np.amax(bvs[i]) - np.sort(bvs[i])[-2])
+                    lowest_larger_tvs = np.sort(bvs[i])[-2]
                 bounds[i] = [sign, (lowest_larger_tvs + np.amax(bvs[i])) / 2.]
             else:
                 lower_tvs = []
                 for j in range(len(tvs[i])):
-                    if tvs[i][j] < np.amin(bvs[i]):
+                    # if tvs[i][j] < np.amin(bvs[i]):
+                    if tvs[i][j] < np.sort(bvs[i])[1]:
                         lower_tvs.append(tvs[i][j])
                 if len(lower_tvs) > 0:
                     highest_lower_tvs = np.amax(lower_tvs)
                 else:
-                    highest_lower_tvs = np.amin(bvs[i]) - abs(np.amin(bvs[i]) - np.amin(tvs[i]))
+                    # highest_lower_tvs = np.amin(bvs[i]) - abs(np.amin(bvs[i]) - np.amin(tvs[i]))
+                    # highest_lower_tvs = np.amin(bvs[i]) - abs(np.amin(bvs[i]) - np.sort(bvs[i])[1])
+                    highest_lower_tvs = np.sort(bvs[i])[1]
                 bounds[i] = [sign, (highest_lower_tvs + np.amin(bvs[i])) / 2.]
 
             print(bounds[i], np.array(bvs[i]), np.array(tvs[i]))
@@ -732,7 +732,7 @@ def configure(output_parameters_dirpath,
             bounds_fname = '{0}/roberta_bounds_{1}1.pkl'.format(output_parameters_dirpath, task_type)
             signs = [False for _ in range(6)]
         else:
-            bounds_fname = '{0}/roberta_bounds_{1}3.pkl'.format(output_parameters_dirpath, task_type)
+            bounds_fname = '{0}/roberta_bounds_{1}4.pkl'.format(output_parameters_dirpath, task_type)
             signs = [True, True, True, True, False, False]
 
         # train roberta bounds
