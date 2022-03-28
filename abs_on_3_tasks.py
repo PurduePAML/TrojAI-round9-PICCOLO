@@ -44,12 +44,12 @@ import warnings
 from abs_pytorch_r9_1_1_4_1_24 import sc_trojan_detector
 # from abs_pytorch_r9_1_1_4_2_3_16 import ner_trojan_detector
 from abs_pytorch_r9_1_1_4_2_11_2 import ner_trojan_detector
-from abs_pytorch_r9_1_1_4_3_3_13_5 import qa_trojan_detector
+from abs_pytorch_r9_1_1_4_3_3_13_5_2 import qa_trojan_detector
 
 warnings.filterwarnings("ignore")
 
 if not for_submission:
-    os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "7"
 
 random_seed = 333
 torch.backends.cudnn.enabled = False
@@ -62,22 +62,28 @@ random.seed(random_seed)
 
 def defer_output(output, model_type):
 
-    # output = np.clip(output, 0.115, 0.885)
+    # output = np.clip(output, 0.115, 1)
 
     ten_digit = np.floor(output * 10)
 
     if model_type == 'ElectraForSequenceClassification':
         new_output = ten_digit/10. + 0.015
+        new_output = np.clip(output, 0.115, 1)
     elif model_type == 'DistilBertForSequenceClassification':
         new_output = ten_digit/10. + 0.025
+        new_output = np.clip(output, 0.115, 1)
     elif model_type == 'RobertaForSequenceClassification':
         new_output = ten_digit/10. + 0.035
+        new_output = np.clip(output, 0.115, 1)
     elif model_type == 'ElectraForTokenClassification':
         new_output = ten_digit/10. + 0.045
+        new_output = np.clip(output, 0.115, 1)
     elif model_type == 'DistilBertForTokenClassification':
         new_output = ten_digit/10. + 0.055
+        new_output = np.clip(output, 0.115, 1)
     elif model_type == 'RobertaForTokenClassification':
         new_output = ten_digit/10. + 0.065
+        new_output = np.clip(output, 0.115, 1)
     elif model_type == 'ElectraForQuestionAnswering':
         new_output = ten_digit/10. + 0.075
     elif model_type == 'DistilBertForQuestionAnswering':
@@ -643,6 +649,8 @@ def configure(output_parameters_dirpath,
         ys = []
         roberta_xs = []
         roberta_ys = []
+        distilbert_xs = []
+        distilbert_ys = []
         for mname in tmnames:
             config_file = os.path.join(configure_models_dirpath, 'models', mname, 'config.json')
             with open(config_file) as json_file:
@@ -654,6 +662,9 @@ def configure(output_parameters_dirpath,
             if model_type.startswith('Roberta'):
                 roberta_xs.append(np.array(roberta_x).reshape(-1))
                 roberta_ys.append(y)
+            if model_type.startswith('DistilBert'):
+                distilbert_xs.append(np.array(x).reshape(-1))
+                distilbert_ys.append(y)
 
         print(xs, ys)
         xs = np.array(xs)
@@ -734,12 +745,25 @@ def configure(output_parameters_dirpath,
         elif task_type == 'sc':
             roberta_cls_fname = '{0}/roberta_lr_roberta_{1}1.pkl'.format(output_parameters_dirpath, task_type)
         else:
-            roberta_cls_fname = '{0}/roberta_lr_roberta_{1}1.pkl'.format(output_parameters_dirpath, task_type)
+            roberta_cls_fname = '{0}/roberta_lr_roberta_{1}2.pkl'.format(output_parameters_dirpath, task_type)
 
         # train roberta cls
         roberta_cls = RandomForestClassifier(n_estimators=ne, max_depth=md, criterion='entropy', warm_start=False, bootstrap=False, )
         roberta_cls.fit(roberta_xs, roberta_ys)
         pickle.dump(roberta_cls, open(roberta_cls_fname, 'wb'))
+
+        if task_type == 'qa':
+            distilbert_cls_fname = '{0}/roberta_lr_distilbert_{1}1.pkl'.format(output_parameters_dirpath, task_type)
+        elif task_type == 'sc':
+            distilbert_cls_fname = '{0}/roberta_lr_distilbert_{1}1.pkl'.format(output_parameters_dirpath, task_type)
+        else:
+            distilbert_cls_fname = '{0}/roberta_lr_distilbert_{1}1.pkl'.format(output_parameters_dirpath, task_type)
+
+        # train distil cls
+        distilbert_cls = RandomForestClassifier(n_estimators=ne, max_depth=md, criterion='entropy', warm_start=False, bootstrap=False, )
+        distilbert_cls.fit(distilbert_xs, distilbert_ys)
+        pickle.dump(distilbert_cls, open(distilbert_cls_fname, 'wb'))
+
 
 if __name__ == "__main__":
     from jsonargparse import ArgumentParser, ActionConfigFile

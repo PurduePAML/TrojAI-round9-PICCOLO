@@ -1343,7 +1343,7 @@ def reverse_engineer(model_type, model, benign_models, benign_logits0, benign_on
                         # F.gumbel_softmax(torch.reshape(delta, (-1, delta_depth)) ) * random_idxs_split,\
                         (word_trigger_length,  delta_depth) )
             
-            print(word_delta.shape, word_token_matrix.shape)
+            # print(word_delta.shape, word_token_matrix.shape)
             use_delta = torch.reshape(\
                     torch.tensordot( word_delta, word_token_matrix, ([1], [0]) ),\
                     (word_trigger_length*word_token_length, depth) )
@@ -1360,7 +1360,7 @@ def reverse_engineer(model_type, model, benign_models, benign_logits0, benign_on
                 base_embeds, pose_embeds, mask_map_init, poisoned_data, poisoned_start_positions, poisoned_end_positions,\
                 benign_start_positions, benign_end_positions, poisoned_starts_mask, poisoned_ends_mask, use_tanh, config)
             end_time = time.time()
-            print('optimization use time', end_time - start_time)
+            # print('optimization use time', end_time - start_time)
 
             # torch.cuda.empty_cache()
             # h = nvmlDeviceGetHandleByIndex(gpu_id)
@@ -1498,7 +1498,7 @@ def reverse_engineer(model_type, model, benign_models, benign_logits0, benign_on
             if best_accs[0] < 1:
                 re_mask_lr = config['re_mask_lr'] * 2
 
-        if e % 1 == 0 or e == re_epochs-1 or last_update == e:
+        if e % 10 == 0 or e == re_epochs-1 or last_update == e:
 
             print('epoch time', epoch_end_time - epoch_start_time)
             print(e, 'loss', loss, 'acc', faccs, 'base_labels trigger option', base_labels, 'sampling label cls pos', samp_labels, 'inject option', inject_option, \
@@ -1641,7 +1641,7 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_one_hots, 
             
             ce_loss_infos = []
             tre_epochs = 10
-            if model_type.startswith('Roberta'):
+            if model_type.startswith('Roberta') or model_type.startswith('DistilBert'):
                 if tbase_labels[0] == 0:
                     inject_options = [1,2]
                 else:
@@ -1693,7 +1693,7 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_one_hots, 
                 inject_option = inject_options[0]
                 print('-'*19, 'ce loss infos', ce_loss_infos, 'final inject_option', inject_option, 'base label', tbase_labels[0], )
 
-            if model_type.startswith('Roberta'):
+            if model_type.startswith('Roberta') or model_type.startswith('DistilBert'):
                 inject_options = [0, inject_option]
             else:
                 inject_options = [inject_option]
@@ -3140,6 +3140,7 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
         token_use_idxs = []
         token_mask = np.zeros((depth, ))
         top10_token_use_idxs = []
+        top10_word_use_idxs = []
         for benign_name2 in benign_names2.split('_'):
             bmodel2 = torch.load(learned_parameters_dirpath+'/qa2_benign_models/{0}/model.pt'.format(benign_name2), map_location=torch.device(device))
             bmodel2.eval()
@@ -3148,11 +3149,19 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
             # token_use_idxs += np.argsort(cos)[:1000].tolist()
             # token_use_idxs += np.argsort(cos)[:2000].tolist()
             token_use_idxs += np.argsort(cos)[:500].tolist()
-            if model_type.startswith('Roberta'):
+            if model_type.startswith('Roberta') or model_type.startswith('DistilBert'):
                 token_use_idxs += np.argsort(cos)[:1500].tolist()
             # token_use_idxs += np.argsort(cos)[:50].tolist()
             # token_use_idxs += np.argsort(cos)[:10000].tolist()
             top10_token_use_idxs += np.argsort(cos)[:10].tolist()
+            
+            avg_cos_per_word = np.zeros((word_token_matrix0.shape[0]))
+            for i in range(word_token_matrix0.shape[0]):
+                for j in range(word_token_matrix0.shape[1]):
+                    avg_cos_per_word[i] += cos[word_token_matrix0[i,j]]
+                
+
+            top10_word_use_idxs += np.argsort(avg_cos_per_word)[:10].tolist()
 
         token_use_idxs = sorted(list(set(token_use_idxs)))
         print('token_use_idxs', len(token_use_idxs))
@@ -3226,6 +3235,12 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
         min_len3_ces2 = 10 
         min_len4_ces1 = 10 
         min_len4_ces2 = 10 
+        
+        if model_type.startswith('DistilBert'):
+            top10_use_idxs += top10_word_use_idxs
+            # top10_use_idxs = top10_word_use_idxs
+
+            top10_use_idxs = sorted(list(set(top10_use_idxs)))
 
         if len(top10_token_use_idxs) > 0:
 
@@ -3414,7 +3429,7 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
             ce_loss_idx = 9 + base_label * 3 + inject_option
         ce_loss_infos1[ce_loss_idx] = float('{:.4f}'.format(ce_loss0))
 
-    if model_type.startswith('Roberta'):
+    if model_type.startswith('Roberta')  or model_type.startswith('DistilBert'):
         features = [emb_id,] + max_reasrs + loss_infos + list(ce_loss_infos1)
     else:
         features = [emb_id,] + max_reasrs + loss_infos + ce_loss_infos
@@ -3449,7 +3464,7 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
     loss1 = np.array(x[49:49+6*12]).reshape((6,12))
     loss1 = np.concatenate([loss1[:,:2], loss1[:,4:6], loss1[:,8:10],], axis=1)
 
-    if model_type.startswith('Roberta'):
+    if model_type.startswith('Roberta')  or model_type.startswith('DistilBert'):
         loss2 = np.array(x[49+6*12:49+6*12+18]).reshape((18))
         asr0 = np.array(x[49+6*12+18:49+6*12+18+4*8]).reshape((4,8))
         loss0 = np.array(x[49+6*12+18+4*8:]).reshape((4,12))
@@ -3476,23 +3491,33 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
     # roberta_x = [x[0], np.amax(np.concatenate([asr[1:3], asr[4:6]])) , np.amin(np.concatenate([loss1[0:1], loss1[3:4]])), np.amax(asr0_1), np.amax(asr0_2)]
     # roberta_x = [x[0], np.amin(np.concatenate([loss1[1:3], loss1[4:6]])) , np.amin(np.concatenate([loss1[0:1], loss1[3:4]])), np.amin(loss0_1), np.amin(loss0_2), ]
     # roberta_x = [x[0], np.amax(np.concatenate([asr[1:3], asr[4:6]])) , np.amin(np.concatenate([loss1[0:1], loss1[3:4]])), np.amin(loss0_1), ]
-    if not model_type.startswith('Roberta'):
-        roberta_x = x[:1] + list(np.amin(np.array([loss1[:3,:], loss1[3:,:]]), axis=0).reshape(-1)) + list( loss2.reshape(-1) ) + list(loss0_1) + list(loss0_2)
-    else:
+    # roberta_x = x[:1] + list(np.amin(np.array([loss1[:3,:], loss1[3:,:]]), axis=0).reshape(-1)) + list(np.amin(loss2.reshape((6,3)), axis=1) ) + list(loss0_1) + list(loss0_2)
+    if model_type.startswith('Roberta')  or model_type.startswith('DistilBert'):
         roberta_x = x[:1] + list(np.amin(np.array([loss1[:3,:], loss1[3:,:]]), axis=0).reshape(-1)) + list(np.amin(loss2.reshape((6,3)), axis=1) ) + list(loss0_1) + list(loss0_2)
+    else:
+        roberta_x = x[:1] + list(np.amin(np.array([loss1[:3,:], loss1[3:,:]]), axis=0).reshape(-1)) + list( loss2.reshape(-1) ) + list(loss0_1) + list(loss0_2)
+
     roberta_x = np.array([roberta_x])
+    distilbert_x = roberta_x
 
     if not is_configure:
-        if not model_type.startswith('Roberta'):
-            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_qa2.pkl'), 'rb'))
-            confs = cls.predict_proba(xs)[:,1]
+        if model_type.startswith('DistilBert'):
+            # special rules for DistilBert
+            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_distilbert_qa1.pkl'), 'rb'))
+            confs = cls.predict_proba(distilbert_x)[:,1]
+            confs = np.clip(confs, 0.025, 0.975)
+            print('confs', confs)
+            output = confs[0]
+        elif model_type.startswith('Roberta'):
+            # special rules for Roberta
+            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_roberta_qa1.pkl'), 'rb'))
+            confs = cls.predict_proba(roberta_x)[:,1]
             confs = np.clip(confs, 0.025, 0.975)
             print('confs', confs)
             output = confs[0]
         else:
-            # special rules for Roberta
-            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_roberta_qa1.pkl'), 'rb'))
-            confs = cls.predict_proba(roberta_x)[:,1]
+            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_qa2.pkl'), 'rb'))
+            confs = cls.predict_proba(xs)[:,1]
             confs = np.clip(confs, 0.025, 0.975)
             print('confs', confs)
             output = confs[0]
