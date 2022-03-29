@@ -62,7 +62,7 @@ random.seed(random_seed)
 
 def defer_output(output, model_type):
 
-    output = np.clip(output, 0.115, 1)
+    # output = np.clip(output, 0.115, 1)
 
     ten_digit = np.floor(output * 10)
 
