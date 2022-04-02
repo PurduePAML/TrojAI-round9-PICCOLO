@@ -43,8 +43,8 @@ import warnings
 
 from abs_pytorch_r9_1_1_4_1_24 import sc_trojan_detector
 # from abs_pytorch_r9_1_1_4_2_3_16 import ner_trojan_detector
-from abs_pytorch_r9_1_1_4_2_11_2 import ner_trojan_detector
-from abs_pytorch_r9_1_1_4_3_3_13_5_2 import qa_trojan_detector
+from abs_pytorch_r9_1_1_4_2_11 import ner_trojan_detector
+from abs_pytorch_r9_1_1_4_3_3_8 import qa_trojan_detector
 
 warnings.filterwarnings("ignore")
 
@@ -62,7 +62,7 @@ random.seed(random_seed)
 
 def defer_output(output, model_type):
 
-    # output = np.clip(output, 0.115, 1)
+    # output = np.clip(output, 0.115, 0.885)
 
     ten_digit = np.floor(output * 10)
 
@@ -133,7 +133,7 @@ def example_trojan_detector(model_filepath,
         print('examples_dirpath = {}'.format(examples_dirpath))
         sc_parameters = [for_submission, is_configure]
         sc_parameters += parameters[:3]
-        output, features = sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)[:2]
+        output, features = sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
         print('features', features)
         fields = ['emb_id'] + ['sc_asr_'+str(_) for _ in range(len(features)-1)]
     elif model_type.endswith('TokenClassification'): 
@@ -145,7 +145,7 @@ def example_trojan_detector(model_filepath,
         print('examples_dirpath = {}'.format(examples_dirpath))
         ner_parameters = [for_submission, is_configure]
         ner_parameters += parameters[3:6]
-        output, features = ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, ner_parameters)[:2]
+        output, features = ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, ner_parameters)
         fields = ['emb_id'] + ['ner_asr_'+str(_) for _ in range(len(features)-1)]
     elif model_type.endswith('QuestionAnswering'): 
         # # TODO maunally set the examples dir
@@ -156,18 +156,14 @@ def example_trojan_detector(model_filepath,
         print('examples_dirpath = {}'.format(examples_dirpath))
         qa_parameters = [for_submission, is_configure]
         qa_parameters += parameters[6:9]
-        output, features = qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, qa_parameters)[:2]
+        output, features = qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, qa_parameters)
         fields = ['emb_id'] + ['qa_asr_'+str(_) for _ in range(len(features)-1)]
 
     end_time = time.time()
     print('model type', model_type, 'time', end_time - start_time)
 
     # output differetidifferetiation
-    # if not model_type.startswith('Roberta'):
-    if True:
-        output = defer_output(output, model_type)
-    else:
-        print(model_type, 'output', output)
+    output = defer_output(output, model_type)
 
     with open(features_filepath, 'w') as csvfile: 
         csvwriter = csv.writer(csvfile)
@@ -234,7 +230,7 @@ def feature_extractor(mname, output_parameters_dirpath, configure_models_dirpath
         #     examples_dirpath = '/sc_clean_example_data/'
         sc_parameters = [for_submission, is_configure]
         sc_parameters += parameters[:3]
-        output, features, roberta_features = sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
+        output, features = sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
         fields = ['emb_id'] + ['sc_asr_'+str(_) for _ in range(len(features)-1)]
     elif model_type.endswith('TokenClassification'): 
         # # TODO maunally set the examples dir
@@ -244,7 +240,7 @@ def feature_extractor(mname, output_parameters_dirpath, configure_models_dirpath
         #     examples_dirpath = '/ner_clean_example_data/'
         sc_parameters = [for_submission, is_configure]
         sc_parameters += parameters[3:6]
-        output, features, roberta_features = ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
+        output, features = ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
         fields = ['emb_id'] + ['ner_asr_'+str(_) for _ in range(len(features)-1)]
     elif model_type.endswith('QuestionAnswering'): 
         # # TODO maunally set the examples dir
@@ -254,7 +250,7 @@ def feature_extractor(mname, output_parameters_dirpath, configure_models_dirpath
         #     examples_dirpath = '/qa_clean_example_data/'
         sc_parameters = [for_submission, is_configure]
         sc_parameters += parameters[6:9]
-        output, features, roberta_features = qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
+        output, features = qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
         fields = ['emb_id'] + ['qa_asr_'+str(_) for _ in range(len(features)-1)]
 
     with open(features_filepath, 'w') as csvfile: 
@@ -265,112 +261,8 @@ def feature_extractor(mname, output_parameters_dirpath, configure_models_dirpath
     with open(result_filepath, 'w') as fh:
         fh.write("{}".format(output))
 
-    return features, roberta_features, model_type
+    return features
 
-
-def train_bounds(train_X, train_y, test_X, test_y, signs):
-    full_bounds = []
-    for arch_i in range(3):
-        bounds = [[] for _ in range(train_X.shape[1]-1)]
-        bvs = [[] for _ in range(train_X.shape[1]-1)]
-        tvs = [[] for _ in range(train_X.shape[1]-1)]
-        for i in range(train_y.shape[0]):
-            if train_X[i,0] == arch_i and train_y[i] == 0:
-                for j in range(len(bvs)):
-                    bvs[j].append(train_X[i,j+1])
-            elif train_X[i,0] == arch_i and train_y[i] == 1:
-                for j in range(len(tvs)):
-                    tvs[j].append(train_X[i,j+1])
-
-        if len(bvs[0]) == 0 or len(tvs[0]) == 0:
-            full_bounds.append([])
-            continue
-
-        for i in range(len(bounds)):
-            sign = signs[i]
-            if sign:
-                larger_tvs = []
-                for j in range(len(tvs[i])):
-                    # if tvs[i][j] > np.amax(bvs[i]):
-                    if tvs[i][j] > np.sort(bvs[i])[-2]:
-                        larger_tvs.append(tvs[i][j])
-                if len(larger_tvs) > 0:
-                    lowest_larger_tvs = np.amin(larger_tvs)
-                else:
-                    # lowest_larger_tvs = np.amax(bvs[i]) + abs(np.amax(bvs[i]) - np.amax(tvs[i]))
-                    # lowest_larger_tvs = np.amax(bvs[i]) + abs(np.amax(bvs[i]) - np.sort(bvs[i])[-2])
-                    lowest_larger_tvs = np.sort(bvs[i])[-2]
-                bounds[i] = [sign, (lowest_larger_tvs + np.amax(bvs[i])) / 2.]
-            else:
-                lower_tvs = []
-                for j in range(len(tvs[i])):
-                    # if tvs[i][j] < np.amin(bvs[i]):
-                    if tvs[i][j] < np.sort(bvs[i])[1]:
-                        lower_tvs.append(tvs[i][j])
-                if len(lower_tvs) > 0:
-                    highest_lower_tvs = np.amax(lower_tvs)
-                else:
-                    # highest_lower_tvs = np.amin(bvs[i]) - abs(np.amin(bvs[i]) - np.amin(tvs[i]))
-                    # highest_lower_tvs = np.amin(bvs[i]) - abs(np.amin(bvs[i]) - np.sort(bvs[i])[1])
-                    highest_lower_tvs = np.sort(bvs[i])[1]
-                bounds[i] = [sign, (highest_lower_tvs + np.amin(bvs[i])) / 2.]
-
-            print(bounds[i], np.array(bvs[i]), np.array(tvs[i]))
-
-        print('arch', arch_i, bounds)
-        full_bounds.append(bounds)
-            
-    train_confs = []
-    train_preds = []
-    for i in range(train_y.shape[0]):
-        bounds =  full_bounds[int(train_X[i,0])]
-        pred = False
-        for j in range(len(bounds)):
-            s, b = bounds[j]
-            if s :
-                if train_X[i,j+1] > b:
-                    pred = True
-            else:
-                if train_X[i,j+1] < b:
-                    pred = True
-            if pred:
-                break
-        if pred:
-            train_preds.append(True)
-            train_confs.append(0.9)
-        else:
-            train_preds.append(False)
-            train_confs.append(0.1)
-
-        # if train_y[i] == 0 and pred:
-        #     print(pred, train_X[i], train_y[i], bounds)
-        #     sys.exit()
-            
-    test_confs = []
-    test_preds = []
-    for i in range(test_y.shape[0]):
-        bounds =  full_bounds[int(test_X[i,0])]
-        pred = False
-        for j in range(len(bounds)):
-            s, b = bounds[j]
-            if s :
-                if test_X[i,j+1] > b:
-                    pred = True
-            else:
-                if test_X[i,j+1] < b:
-                    pred = True
-            if pred:
-                break
-        if pred:
-            test_preds.append(True)
-            test_confs.append(0.9)
-        else:
-            test_preds.append(False)
-            test_confs.append(0.1)
-    preds = test_preds
-    confs = test_confs
-
-    return preds, confs, train_confs, full_bounds
 
 def test_cls_param(Xs, ys, ne, md):
 
@@ -381,8 +273,8 @@ def test_cls_param(Xs, ys, ne, md):
     roc_aucs = []
     ce_losses = []
     train_aucs = []
-    kf = KFold(n_splits=5, shuffle=True)
-    # kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=1234)
+    # kf = KFold(n_splits=5, shuffle=True)
+    kf = StratifiedKFold(n_splits=10, shuffle=True, random_state=1234)
     for train_index, test_index in kf.split(Xs, ys):
         try:
         # if True:
@@ -637,34 +529,33 @@ def configure(output_parameters_dirpath,
         # sys.exit()
 
 
-        # if True:
-        #     tmnames = 'id-00000002_id-00000014_id-00000027_id-00000054_id-00000063_id-00000074_id-00000075_id-00000094_id-00000099_id-00000101_id-00000112_id-00000119_id-00000135_id-00000137_id-00000180_id-00000187_id-00000190_id-00000198_id-00000205_id-00000208'
-        #     tmnames = tmnames.split('_')
+        # if False:
         #     print('tmnames', tmnames)
 
-        #     tmnames = tmnames[:6]
+        #     # tmnames = 'id-00000000_id-00000008_id-00000009_id-00000010_id-00000011_id-00000014_id-00000016_id-00000018_id-00000019_id-00000023_id-00000024_id-00000025_id-00000027_id-00000028_id-00000030_id-00000031_id-00000032_id-00000036_id-00000038_id-00000039_id-00000041_id-00000052_id-00000054_id-00000056_id-00000062_id-00000073_id-00000074_id-00000076_id-00000077_id-00000081_id-00000085_id-00000089_id-00000090_id-00000091_id-00000092_id-00000095_id-00000101_id-00000115_id-00000117_id-00000118_id-00000121_id-00000122_id-00000123_id-00000127_id-00000134_id-00000139'
+
+        #     # tmnames = 'id-00000001_id-00000002_id-00000006_id-00000007_id-00000021_id-00000029_id-00000034_id-00000035_id-00000037_id-00000043_id-00000045_id-00000046_id-00000047_id-00000048_id-00000049_id-00000050_id-00000051_id-00000053_id-00000055_id-00000058_id-00000059_id-00000060_id-00000065_id-00000066_id-00000067_id-00000068_id-00000070_id-00000071_id-00000075_id-00000083_id-00000084_id-00000087_id-00000096_id-00000098_id-00000100_id-00000103_id-00000107_id-00000109_id-00000111_id-00000112_id-00000113_id-00000114_id-00000116_id-00000119_id-00000125_id-00000126_id-00000128_id-00000130_id-00000132_id-00000135_id-00000137'
+
+        #     # tmnames = 'id-00000002_id-00000007_id-00000029_id-00000034_id-00000037_id-00000046_id-00000047_id-00000051_id-00000053_id-00000059_id-00000065_id-00000066_id-00000070_id-00000071_id-00000084_id-00000096_id-00000100_id-00000103_id-00000112_id-00000113_id-00000114_id-00000116_id-00000119_id-00000128_id-00000130_id-00000132_id-00000135'
+
+        #     tmnames = tmnames.split('_')
+
+        #     print('tmnames', tmnames)
+
+        # if True:
+        #     tmnames = tmnames[:20]
  
         # train classifier
         xs = []
         ys = []
-        roberta_xs = []
-        roberta_ys = []
-        distilbert_xs = []
-        distilbert_ys = []
         for mname in tmnames:
             config_file = os.path.join(configure_models_dirpath, 'models', mname, 'config.json')
             with open(config_file) as json_file:
                 model_config = json.load(json_file)
             y = int( model_config['poisoned']  )
             ys.append(y)
-            x, roberta_x, model_type = feature_extractor(mname, output_parameters_dirpath, configure_models_dirpath, scratch_dirpath, parameters)
+            x = feature_extractor(mname, output_parameters_dirpath, configure_models_dirpath, scratch_dirpath, parameters)
             xs.append(x)
-            if model_type.startswith('Roberta'):
-                roberta_xs.append(np.array(roberta_x).reshape(-1))
-                roberta_ys.append(y)
-            if model_type.startswith('DistilBert'):
-                distilbert_xs.append(np.array(x).reshape(-1))
-                distilbert_ys.append(y)
 
         print(xs, ys)
         xs = np.array(xs)
@@ -673,11 +564,6 @@ def configure(output_parameters_dirpath,
         # with open('{0}/features.pkl'.format(scratch_dirpath), 'wb') as f:
         with open('{0}/features.pkl'.format(output_parameters_dirpath), 'wb') as f:
             pickle.dump((xs, ys), f)
-
-        roberta_xs = np.array(roberta_xs)
-        roberta_ys = np.array(roberta_ys)
-        with open('{0}/roberta_features.pkl'.format(output_parameters_dirpath), 'wb') as f:
-            pickle.dump((roberta_xs, roberta_ys), f)
 
         # xs, ys = pickle.load(open('{0}/features.pkl'.format(scratch_dirpath), 'rb')) 
         print('xs', xs.shape, 'ys', ys.shape)
@@ -718,51 +604,15 @@ def configure(output_parameters_dirpath,
         print('overall roc_auc', roc_auc, 'celoss', ce_loss)
         
         if task_type == 'qa':
-            pickle.dump(cls, open('{0}/rf_lr_{1}2.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
+            pickle.dump(cls, open('{0}/rf_lr_{1}3.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
         elif task_type == 'sc':
-            pickle.dump(cls, open('{0}/rf_lr_{1}1.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
+            pickle.dump(cls, open('{0}/rf_lr_{1}3.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
         else:
-            pickle.dump(cls, open('{0}/rf_lr_{1}0.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
+            pickle.dump(cls, open('{0}/rf_lr_{1}3.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
 
 
-        if task_type == 'qa':
-            bounds_fname = '{0}/roberta_bounds_{1}3.pkl'.format(output_parameters_dirpath, task_type)
-            signs = [True, False, False, ]
-        elif task_type == 'sc':
-            bounds_fname = '{0}/roberta_bounds_{1}1.pkl'.format(output_parameters_dirpath, task_type)
-            signs = [False for _ in range(6)]
-        else:
-            bounds_fname = '{0}/roberta_bounds_{1}4.pkl'.format(output_parameters_dirpath, task_type)
-            signs = [True, True, True, True, False, False]
-
-        # train roberta bounds
-        preds, confs, train_confs, full_bounds = train_bounds(roberta_xs, roberta_ys, roberta_xs, roberta_ys, signs)
-        pickle.dump(full_bounds, open(bounds_fname, 'wb'))
 
 
-        if task_type == 'qa':
-            roberta_cls_fname = '{0}/roberta_lr_roberta_{1}1.pkl'.format(output_parameters_dirpath, task_type)
-        elif task_type == 'sc':
-            roberta_cls_fname = '{0}/roberta_lr_roberta_{1}1.pkl'.format(output_parameters_dirpath, task_type)
-        else:
-            roberta_cls_fname = '{0}/roberta_lr_roberta_{1}2.pkl'.format(output_parameters_dirpath, task_type)
-
-        # train roberta cls
-        roberta_cls = RandomForestClassifier(n_estimators=ne, max_depth=md, criterion='entropy', warm_start=False, bootstrap=False, )
-        roberta_cls.fit(roberta_xs, roberta_ys)
-        pickle.dump(roberta_cls, open(roberta_cls_fname, 'wb'))
-
-        if task_type == 'qa':
-            distilbert_cls_fname = '{0}/roberta_lr_distilbert_{1}1.pkl'.format(output_parameters_dirpath, task_type)
-        elif task_type == 'sc':
-            distilbert_cls_fname = '{0}/roberta_lr_distilbert_{1}1.pkl'.format(output_parameters_dirpath, task_type)
-        else:
-            distilbert_cls_fname = '{0}/roberta_lr_distilbert_{1}1.pkl'.format(output_parameters_dirpath, task_type)
-
-        # train distil cls
-        distilbert_cls = RandomForestClassifier(n_estimators=ne, max_depth=md, criterion='entropy', warm_start=False, bootstrap=False, )
-        distilbert_cls.fit(distilbert_xs, distilbert_ys)
-        pickle.dump(distilbert_cls, open(distilbert_cls_fname, 'wb'))
 
 
 if __name__ == "__main__":
