@@ -2038,7 +2038,8 @@ def sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
     x = features
     nx = x[:17] + x[17+96:17+96+6] + x[17:17+96] + x[17+96+6:]
     x = nx
-    nx = [x[0], x[9], x[13], x[10], x[14], min([x[9], x[13]]), min([x[10], x[14]]), np.min(x[-8:-6]), np.min(x[-4:-2]), np.min(x[17:21]), np.min(x[21:23]),] + x[17:23] # + nx
+    # nx = [x[0], x[9], x[13], x[10], x[14], min([x[9], x[13]]), min([x[10], x[14]]), np.min(x[-8:-6]), np.min(x[-4:-2]), np.min(x[17:21]), np.min(x[21:23]),] + x[17:23] # + nx
+    nx = [x[0], np.amin([x[9], x[13]]), np.amin([x[10], x[14]]), np.amin(x[-8:-6]), np.amin(x[-4:-2]), ] + x[21:23]
     features = nx
     xs = np.array([features])
     if not is_configure:
