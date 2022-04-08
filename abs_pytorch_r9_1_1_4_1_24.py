@@ -2040,8 +2040,14 @@ def sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
     x = nx
     # nx = [x[0], x[9], x[13], x[10], x[14], min([x[9], x[13]]), min([x[10], x[14]]), np.min(x[-8:-6]), np.min(x[-4:-2]), np.min(x[17:21]), np.min(x[21:23]),] + x[17:23] # + nx
     nx = [x[0], np.amin([x[9], x[13]]), np.amin([x[10], x[14]]), np.amin(x[-8:-6]), np.amin(x[-4:-2]), ] + x[21:23]
+
+
     features = nx
     xs = np.array([features])
+    
+    roberta_x = nx
+    roberta_x = np.array([roberta_x])
+
     if not is_configure:
         cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_sc3.pkl'), 'rb'))
         confs = cls.predict_proba(xs)[:,1]
@@ -2049,6 +2055,6 @@ def sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
         print('confs', confs)
         output = confs[0]
 
-    return output, features
+    return output, features, roberta_x
 
 
