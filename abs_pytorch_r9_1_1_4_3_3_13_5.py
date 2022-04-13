@@ -3480,6 +3480,7 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
     if not model_type.startswith('Roberta'):
         roberta_x = x[:1] + list(np.amin(np.array([loss1[:3,:], loss1[3:,:]]), axis=0).reshape(-1)) + list( loss2.reshape(-1) ) + list(loss0_1) + list(loss0_2)
     else:
+        # roberta_x = x[:1] + list(np.amin(np.array([loss1[:3,:], loss1[3:,:]]), axis=0).reshape(-1)) + list(np.amin(loss2.reshape((6,3)), axis=1) ) + list(loss0_1) + list(loss0_2)
         roberta_x = x[:1] + list(np.amin(np.array([loss1[:3,:], loss1[3:,:]]), axis=0).reshape(-1)) + list(np.amin(loss2.reshape((6,3)), axis=1) ) + list(loss0_1) + list(loss0_2)
 
     roberta_x = np.array([roberta_x])
@@ -3493,7 +3494,7 @@ def qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
             output = confs[0]
         else:
             # special rules for Roberta
-            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_roberta_qa4.pkl'), 'rb'))
+            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_roberta_qa5.pkl'), 'rb'))
             confs = cls.predict_proba(roberta_x)[:,1]
             confs = np.clip(confs, 0.025, 0.975)
             print('confs', confs)

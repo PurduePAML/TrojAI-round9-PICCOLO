@@ -43,13 +43,13 @@ import warnings
 
 from abs_pytorch_r9_1_1_4_1_24 import sc_trojan_detector
 # from abs_pytorch_r9_1_1_4_2_3_16 import ner_trojan_detector
-from abs_pytorch_r9_1_1_4_2_24 import ner_trojan_detector
+from abs_pytorch_r9_1_1_4_2_11 import ner_trojan_detector
 from abs_pytorch_r9_1_1_4_3_3_13_5 import qa_trojan_detector
 
 warnings.filterwarnings("ignore")
 
 if not for_submission:
-    os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+    os.environ["CUDA_VISIBLE_DEVICES"] = "4"
 
 random_seed = 333
 torch.backends.cudnn.enabled = False
@@ -715,7 +715,7 @@ def configure(output_parameters_dirpath,
         elif task_type == 'sc':
             pickle.dump(cls, open('{0}/rf_lr_{1}4.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
         else:
-            pickle.dump(cls, open('{0}/rf_lr_{1}5.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
+            pickle.dump(cls, open('{0}/rf_lr_{1}6.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
 
 
         # if task_type == 'qa':
@@ -734,11 +734,11 @@ def configure(output_parameters_dirpath,
 
 
         if task_type == 'qa':
-            roberta_cls_fname = '{0}/roberta_lr_roberta_{1}4.pkl'.format(output_parameters_dirpath, task_type)
+            roberta_cls_fname = '{0}/roberta_lr_roberta_{1}5.pkl'.format(output_parameters_dirpath, task_type)
         elif task_type == 'sc':
             roberta_cls_fname = '{0}/roberta_lr_roberta_{1}4.pkl'.format(output_parameters_dirpath, task_type)
         else:
-            roberta_cls_fname = '{0}/roberta_lr_roberta_{1}5.pkl'.format(output_parameters_dirpath, task_type)
+            roberta_cls_fname = '{0}/roberta_lr_roberta_{1}6.pkl'.format(output_parameters_dirpath, task_type)
 
         # train roberta cls
         roberta_cls = RandomForestClassifier(n_estimators=ne, max_depth=md, criterion='entropy', warm_start=False, bootstrap=False, )

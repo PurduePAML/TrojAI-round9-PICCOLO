@@ -995,8 +995,6 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_embeds, be
             RE_masks.append(RE_mask)
             RE_deltas.append(RE_delta)
 
-        karm_losses = []
-
         task_batch_size = tasks_per_run
         tre_epochs = 5
         k_arm_results = []
@@ -1031,8 +1029,6 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_embeds, be
 
                 k_arm_results.append([tbase_labels[0], tsamp_labels[0], trigger_pos, logits_loss, logits_loss_diff, ce_loss, ce_loss_diff])
                 # k_arm_results.append([tbase_labels[0], tsamp_labels[0], trigger_pos, logits_loss, logits_loss_diff,])
-
-                karm_losses.append((tbase_labels[0], tsamp_labels[0], trigger_pos, ce_loss))
 
         if not model_type.startswith('Roberta'):
             sorted_k_arm_results = sorted(k_arm_results, key=lambda x: x[4])[::-1]
@@ -1131,7 +1127,7 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_embeds, be
             # if find_trigger:
             #     break
 
-        return validated_results, karm_losses
+        return validated_results
 
 
 def test_trigger_pos1(model_type, models, rword_delta, use_idxs, input_ids, attention_mask, word_labels, original_words_list, original_labels_list, fys, valid_base_labels, base_label, token_neighbours_dict, token_word_dict, word_token_dict, neutral_words, config, benign_models):
@@ -2693,7 +2689,7 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     # sys.exit()
 
 
-    results, karm_losses = re_mask(model_type, models, \
+    results = re_mask(model_type, models, \
             benign_models, benign_logits0, benign_embeds, benign_poses, benign_attentions, benign_ys, benign_word_labels, embedding_signs, \
             neuron_dict, children, \
             optz_embeds, optz_poses, optz_inputs, optz_attentions, optz_ys, optz_word_labels, original_words_list, original_labels_list, fys,\
@@ -2725,17 +2721,6 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
         features[8+i*16:16+i*16] = 10
     features[16*3*nlabel_pairs:16*3*nlabel_pairs+nlabel_pairs*3] = 10
     label_pair_idxs_list = []
-
-    for result in karm_losses:
-        base_label, samp_label, trigger_pos, ce_loss = result
-        base_idx = (base_label-1)//2
-        samp_idx = (samp_label-1)//2
-        if samp_idx > base_idx:
-            samp_idx -= 1
-        label_pair_idx = ( base_idx * (len(valid_base_labels)-1) + samp_idx ) * 3 + trigger_pos
-        print('-'*19, base_label, samp_label, trigger_pos, base_idx, samp_idx, label_pair_idx)
-        features[16*3*nlabel_pairs+label_pair_idx] = ce_loss
-
     for result in results:
         rdelta, rmask, optz_label, RE_img, RE_mask, RE_delta, samp_label, base_label, acc, trigger_pos, asrs, ces, rdelta_idxs, rdelta_words, ce_loss = result
 
@@ -2862,24 +2847,28 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     # nx = [emb_id] + list(test_ces.reshape(-1)) + list(opt_ces)[5*3:5*3+2] + list(opt_ces)[3*9:3*9+2]\
     #         + [np.max(test_asrs[:2]), np.max(test_asrs[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-16:-8])]
 
-    nx = [emb_id] + list(test_ces.reshape(-1)) + [np.amin(opt_ces[3*9:3*9+2]), ]\
+    # nx = [emb_id] + list(test_ces.reshape(-1)) + [np.amin(opt_ces[3*9:3*9+2]), ]\
+    #         + [np.max(test_asrs[:2]), np.amin(test_ces[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-12:-8])]
+
+    nx = [emb_id] + list(test_ces.reshape(-1)) + list(np.mean(opt_ces.reshape((12,3)), axis=0) )\
             + [np.max(test_asrs[:2]), np.amin(test_ces[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-12:-8])]
 
     features = nx
     xs = np.array([features])
 
-    roberta_x = [emb_id, np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), np.amin(opt_ces[3*9:3*9+2]), opt_ces[9*3+2], ]
+    # roberta_x = [emb_id, np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), np.amin(opt_ces[3*9:3*9+2]), opt_ces[9*3+2], ]
+    roberta_x = [emb_id, np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), ] + list(np.mean(opt_ces.reshape((12,3)), axis=0) )
     roberta_x = np.array([roberta_x])
     if not is_configure:
         if not model_type.startswith('Roberta'):
-            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_ner5.pkl'), 'rb'))
+            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_ner6.pkl'), 'rb'))
             confs = cls.predict_proba(xs)[:,1]
             confs = np.clip(confs, 0.025, 0.975)
             print('confs', confs)
             output = confs[0]
         else:
             # special rules for Roberta
-            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_roberta_ner5.pkl'), 'rb'))
+            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_roberta_ner6.pkl'), 'rb'))
             confs = cls.predict_proba(roberta_x)[:,1]
             confs = np.clip(confs, 0.025, 0.975)
             print('confs', confs)
