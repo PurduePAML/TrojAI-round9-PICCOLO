@@ -2850,7 +2850,10 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     # nx = [emb_id] + list(test_ces.reshape(-1)) + [np.amin(opt_ces[3*9:3*9+2]), ]\
     #         + [np.max(test_asrs[:2]), np.amin(test_ces[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-12:-8])]
 
-    nx = [emb_id] + list(test_ces.reshape(-1)) + list(np.amin(opt_ces.reshape((12,3)), axis=0) )\
+    # nx = [emb_id] + list(test_ces.reshape(-1)) + list(np.amin(opt_ces.reshape((12,3)), axis=0) )\
+    #         + [np.max(test_asrs[:2]), np.amin(test_ces[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-12:-8])]
+
+    nx = [emb_id] + list(test_ces.reshape(-1))\
             + [np.max(test_asrs[:2]), np.amin(test_ces[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-12:-8])]
 
     features = nx
@@ -2861,7 +2864,7 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     roberta_x = np.array([roberta_x])
     if not is_configure:
         if not model_type.startswith('Roberta'):
-            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_ner6.pkl'), 'rb'))
+            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_ner7.pkl'), 'rb'))
             confs = cls.predict_proba(xs)[:,1]
             confs = np.clip(confs, 0.025, 0.975)
             print('confs', confs)

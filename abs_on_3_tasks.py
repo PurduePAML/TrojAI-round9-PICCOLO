@@ -715,7 +715,7 @@ def configure(output_parameters_dirpath,
         elif task_type == 'sc':
             pickle.dump(cls, open('{0}/rf_lr_{1}4.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
         else:
-            pickle.dump(cls, open('{0}/rf_lr_{1}6.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
+            pickle.dump(cls, open('{0}/rf_lr_{1}7.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
 
 
         # if task_type == 'qa':
