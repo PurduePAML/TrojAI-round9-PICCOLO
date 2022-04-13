@@ -2850,14 +2850,14 @@ def ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scr
     # nx = [emb_id] + list(test_ces.reshape(-1)) + [np.amin(opt_ces[3*9:3*9+2]), ]\
     #         + [np.max(test_asrs[:2]), np.amin(test_ces[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-12:-8])]
 
-    nx = [emb_id] + list(test_ces.reshape(-1)) + list(np.mean(opt_ces.reshape((12,3)), axis=0) )\
+    nx = [emb_id] + list(test_ces.reshape(-1)) + list(np.amin(opt_ces.reshape((12,3)), axis=0) )\
             + [np.max(test_asrs[:2]), np.amin(test_ces[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-12:-8])]
 
     features = nx
     xs = np.array([features])
 
     # roberta_x = [emb_id, np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), np.amin(opt_ces[3*9:3*9+2]), opt_ces[9*3+2], ]
-    roberta_x = [emb_id, np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), ] + list(np.mean(opt_ces.reshape((12,3)), axis=0) )
+    roberta_x = [emb_id, np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), ] + list(np.amin(opt_ces.reshape((12,3)), axis=0) )
     roberta_x = np.array([roberta_x])
     if not is_configure:
         if not model_type.startswith('Roberta'):
