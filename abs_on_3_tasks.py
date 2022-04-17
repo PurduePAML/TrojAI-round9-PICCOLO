@@ -130,10 +130,7 @@ def example_trojan_detector(model_filepath,
     end_time = time.time()
     print('model type', model_type, 'time', end_time - start_time)
 
-    if model_type.endswith('QuestionAnswering'): 
-        output = np.clip(output, 0.025, 0.975)
-    else:
-        output = np.clip(output, 0.1, 0.975)
+    output = np.clip(output, 0.1, 0.975)
 
     with open(features_filepath, 'w') as csvfile: 
         csvwriter = csv.writer(csvfile)
