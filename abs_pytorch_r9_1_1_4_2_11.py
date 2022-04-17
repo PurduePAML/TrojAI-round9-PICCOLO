@@ -864,7 +864,11 @@ def reverse_engineer(model_type, models, benign_models, benign_logits0, benign_e
         # if delta_sum_loss_weight > 0:
         #     optimizer.state = collections.defaultdict(dict)
 
-        if faccs[0] >= best_accs[0] and e >= 35:
+        if model_type.startswith('Roberta'):
+            save_cond = ce_loss.cpu().detach().numpy() < best_ce_loss and faccs[0] >= best_accs[0] and e >= 35
+        else:
+            save_cond = faccs[0] >= best_accs[0] and e >= 35
+        if save_cond:
             print('update', e, logits_loss.cpu().detach().numpy(),  best_logits_loss, faccs)
             best_delta = use_delta.cpu().detach().numpy()
             best_word_delta = word_delta.cpu().detach().numpy()
@@ -1030,10 +1034,8 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_embeds, be
                 k_arm_results.append([tbase_labels[0], tsamp_labels[0], trigger_pos, logits_loss, logits_loss_diff, ce_loss, ce_loss_diff])
                 # k_arm_results.append([tbase_labels[0], tsamp_labels[0], trigger_pos, logits_loss, logits_loss_diff,])
 
-        if not model_type.startswith('Roberta'):
-            sorted_k_arm_results = sorted(k_arm_results, key=lambda x: x[4])[::-1]
-        else:
-            sorted_k_arm_results = sorted(k_arm_results, key=lambda x: x[6])[::-1]
+        sorted_k_arm_results = sorted(k_arm_results, key=lambda x: x[4])[::-1]
+        # sorted_k_arm_results = sorted(k_arm_results, key=lambda x: x[6])
         top_k_arm_results = sorted_k_arm_results[0]
 
         print('top_k_arm_results', top_k_arm_results)
@@ -1082,10 +1084,7 @@ def re_mask(model_type, models, benign_models, benign_logits0, benign_embeds, be
         print('final_top_k_arm_results', final_top_k_arm_results)
 
         # max_nchecks = 33
-        if not model_type.startswith('Roberta'):
-            max_nchecks = 18
-        else:
-            max_nchecks = 20
+        max_nchecks = 18
         final_top_k_arm_results = final_top_k_arm_results[:max_nchecks]
 
         print('final_top_k_arm_results', final_top_k_arm_results)
@@ -1961,7 +1960,6 @@ def inject_idx(tokenizer, full_model, input_ids, attention_mask, word_labels, tr
 
 def ner_trojan_detector(full_model, model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, parameters):
     start = time.time()
-
     
     print('ner parameters', parameters)
 
@@ -1999,8 +1997,6 @@ def ner_trojan_detector(full_model, model_filepath, tokenizer_filepath, result_f
     tasks_per_run       = config['tasks_per_run']
     device              = config['device']
 
-    print('ner config', config)
-
     # load the classification model and move it to the GPU
     # model = torch.load(model_filepath, map_location=torch.device('cuda'))
     # full_model = torch.load(model_filepath, map_location=torch.device(device))
@@ -2023,8 +2019,13 @@ def ner_trojan_detector(full_model, model_filepath, tokenizer_filepath, result_f
     model = full_model.classifier
     num_classes = list(model.named_modules())[0][1].out_features
     print('num_classes', num_classes)
-    word_trigger_length = config['word_trigger_length']
 
+    if model_type.startswith('Roberta'):
+        config['re_epochs']             = config['re_epochs'] + 30
+
+    print('ner config', config)
+
+    word_trigger_length = config['word_trigger_length']
     # same for the 3 basic types
     children = list(model.children())
     target_layers = ['Linear']
@@ -2356,11 +2357,9 @@ def ner_trojan_detector(full_model, model_filepath, tokenizer_filepath, result_f
         for j in valid_base_labels:
             if i == j:
                 continue
-
-            if not model_type.startswith('Roberta'):
-                if not (full_label_ranks[i,j] < 3 and num_classes == 9 or\
-                        full_label_ranks[i,j] < 4 and num_classes == 13):
-                    continue
+            if not (full_label_ranks[i,j] < 3 and num_classes == 9 or\
+                    full_label_ranks[i,j] < 4 and num_classes == 13):
+                continue
 
             # # if not ( j == 3 and i == 7 ):
             # if not ( j == 1 and i == 7 ):
@@ -2846,38 +2845,42 @@ def ner_trojan_detector(full_model, model_filepath, tokenizer_filepath, result_f
     opt_ces = np.array(x[16*3*12:16*3*12+12*3])
 
 
-    # nx = [emb_id] + list(test_ces.reshape(-1)) + list(opt_ces)[5*3:5*3+2] + list(opt_ces)[3*9:3*9+2]\
-    #         + [np.max(test_asrs[:2]), np.max(test_asrs[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-16:-8])]
-
-    # nx = [emb_id] + list(test_ces.reshape(-1)) + [np.amin(opt_ces[3*9:3*9+2]), ]\
-    #         + [np.max(test_asrs[:2]), np.amin(test_ces[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-12:-8])]
-
-    # nx = [emb_id] + list(test_ces.reshape(-1)) + list(np.amin(opt_ces.reshape((12,3)), axis=0) )\
-    #         + [np.max(test_asrs[:2]), np.amin(test_ces[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-12:-8])]
-
-    nx = [emb_id] + list(test_ces.reshape(-1))\
-            + [np.max(test_asrs[:2]), np.amin(test_ces[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-12:-8])]
+    nx = [emb_id] + list(test_ces.reshape(-1)) + list(opt_ces)[5*3:5*3+2] + list(opt_ces)[3*9:3*9+2]\
+            + [np.max(test_asrs[:2]), np.max(test_asrs[2:]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-16:-8])]
 
     features = nx
     xs = np.array([features])
 
     # roberta_x = [emb_id, np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), np.amin(opt_ces[3*9:3*9+2]), opt_ces[9*3+2], ]
-    roberta_x = [emb_id, np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), ] + list(np.amin(opt_ces.reshape((12,3)), axis=0) )
+    # roberta_x = [np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-16:-8])]
+    roberta_x = [emb_id, np.max(test_asrs[:2]), test_asrs[2], np.max(x[-16:-12]), np.max(x[-16:-8]) , opt_ces[9*3] , opt_ces[9*3+3], ]
     roberta_x = np.array([roberta_x])
     if not is_configure:
         if not model_type.startswith('Roberta'):
-            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_ner7.pkl'), 'rb'))
+            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_ner0.pkl'), 'rb'))
             confs = cls.predict_proba(xs)[:,1]
             confs = np.clip(confs, 0.025, 0.975)
             print('confs', confs)
             output = confs[0]
         else:
             # special rules for Roberta
-            cls = pickle.load(open(os.path.join(learned_parameters_dirpath, 'rf_lr_roberta_ner6.pkl'), 'rb'))
-            confs = cls.predict_proba(roberta_x)[:,1]
-            confs = np.clip(confs, 0.025, 0.975)
-            print('confs', confs)
-            output = confs[0]
+            full_bounds = pickle.load(open(os.path.join(learned_parameters_dirpath, 'roberta_bounds_ner4.pkl'), 'rb'))
+            bounds =  full_bounds[int(roberta_x[0,0])]
+            pred = False
+            for j in range(len(bounds)):
+                s, b = bounds[j]
+                if s :
+                    if roberta_x[0,j+1] > b:
+                        pred = True
+                else:
+                    if roberta_x[0,j+1] < b:
+                        pred = True
+                if pred:
+                    break
+            if pred:
+                output = 0.945
+            else:
+                output = 0.12
 
     print('full features', features)
     print('roberta features', roberta_x)

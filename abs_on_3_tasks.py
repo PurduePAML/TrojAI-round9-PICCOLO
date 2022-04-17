@@ -62,7 +62,7 @@ random.seed(random_seed)
 
 def defer_output(output, model_type):
 
-    # output = np.clip(output, 0.115, 0.885)
+    output = np.clip(output, 0.115, 1)
 
     ten_digit = np.floor(output * 10)
 
@@ -163,7 +163,10 @@ def example_trojan_detector(model_filepath,
     print('model type', model_type, 'time', end_time - start_time)
 
     # output differetidifferetiation
-    output = defer_output(output, model_type)
+    if True:
+        output = defer_output(output, model_type)
+    else:
+        print(model_type, 'output', output)
 
     with open(features_filepath, 'w') as csvfile: 
         csvwriter = csv.writer(csvfile)
@@ -287,22 +290,28 @@ def train_bounds(train_X, train_y, test_X, test_y, signs):
             if sign:
                 larger_tvs = []
                 for j in range(len(tvs[i])):
-                    if tvs[i][j] > np.amax(bvs[i]):
+                    # if tvs[i][j] > np.amax(bvs[i]):
+                    if tvs[i][j] > np.sort(bvs[i])[-2]:
                         larger_tvs.append(tvs[i][j])
                 if len(larger_tvs) > 0:
                     lowest_larger_tvs = np.amin(larger_tvs)
                 else:
-                    lowest_larger_tvs = np.amax(bvs[i]) + abs(np.amax(bvs[i]) - np.amax(tvs[i]))
+                    # lowest_larger_tvs = np.amax(bvs[i]) + abs(np.amax(bvs[i]) - np.amax(tvs[i]))
+                    # lowest_larger_tvs = np.amax(bvs[i]) + abs(np.amax(bvs[i]) - np.sort(bvs[i])[-2])
+                    lowest_larger_tvs = np.sort(bvs[i])[-2]
                 bounds[i] = [sign, (lowest_larger_tvs + np.amax(bvs[i])) / 2.]
             else:
                 lower_tvs = []
                 for j in range(len(tvs[i])):
-                    if tvs[i][j] < np.amin(bvs[i]):
+                    # if tvs[i][j] < np.amin(bvs[i]):
+                    if tvs[i][j] < np.sort(bvs[i])[1]:
                         lower_tvs.append(tvs[i][j])
                 if len(lower_tvs) > 0:
                     highest_lower_tvs = np.amax(lower_tvs)
                 else:
-                    highest_lower_tvs = np.amin(bvs[i]) - abs(np.amin(bvs[i]) - np.amin(tvs[i]))
+                    # highest_lower_tvs = np.amin(bvs[i]) - abs(np.amin(bvs[i]) - np.amin(tvs[i]))
+                    # highest_lower_tvs = np.amin(bvs[i]) - abs(np.amin(bvs[i]) - np.sort(bvs[i])[1])
+                    highest_lower_tvs = np.sort(bvs[i])[1]
                 bounds[i] = [sign, (highest_lower_tvs + np.amin(bvs[i])) / 2.]
 
             print(bounds[i], np.array(bvs[i]), np.array(tvs[i]))
@@ -647,6 +656,8 @@ def configure(output_parameters_dirpath,
         # train classifier
         xs = []
         ys = []
+        roberta_xs = []
+        roberta_ys = []
         for mname in tmnames:
             config_file = os.path.join(configure_models_dirpath, 'models', mname, 'config.json')
             with open(config_file) as json_file:
@@ -715,22 +726,22 @@ def configure(output_parameters_dirpath,
         elif task_type == 'sc':
             pickle.dump(cls, open('{0}/rf_lr_{1}4.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
         else:
-            pickle.dump(cls, open('{0}/rf_lr_{1}7.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
+            pickle.dump(cls, open('{0}/rf_lr_{1}0.pkl'.format(output_parameters_dirpath, task_type), 'wb'))
 
 
-        # if task_type == 'qa':
-        #     bounds_fname = '{0}/roberta_bounds_{1}4.pkl'.format(output_parameters_dirpath, task_type)
-        #     signs = [True, False, False, ]
-        # elif task_type == 'sc':
-        #     bounds_fname = '{0}/roberta_bounds_{1}4.pkl'.format(output_parameters_dirpath, task_type)
-        #     signs = [False for _ in range(6)]
-        # else:
-        #     bounds_fname = '{0}/roberta_bounds_{1}4.pkl'.format(output_parameters_dirpath, task_type)
-        #     signs = [True, True, True, True, False, False]
+        if task_type == 'qa':
+            bounds_fname = '{0}/roberta_bounds_{1}4.pkl'.format(output_parameters_dirpath, task_type)
+            signs = [True, False, False, ]
+        elif task_type == 'sc':
+            bounds_fname = '{0}/roberta_bounds_{1}4.pkl'.format(output_parameters_dirpath, task_type)
+            signs = [False for _ in range(6)]
+        else:
+            bounds_fname = '{0}/roberta_bounds_{1}4.pkl'.format(output_parameters_dirpath, task_type)
+            signs = [True, True, True, True, False, False]
 
-        # # train roberta bounds
-        # preds, confs, train_confs, full_bounds = train_bounds(roberta_xs, roberta_ys, roberta_xs, roberta_ys, signs)
-        # pickle.dump(full_bounds, open(bounds_fname, 'wb'))
+        # train roberta bounds
+        preds, confs, train_confs, full_bounds = train_bounds(roberta_xs, roberta_ys, roberta_xs, roberta_ys, signs)
+        pickle.dump(full_bounds, open(bounds_fname, 'wb'))
 
 
         if task_type == 'qa':
@@ -738,7 +749,7 @@ def configure(output_parameters_dirpath,
         elif task_type == 'sc':
             roberta_cls_fname = '{0}/roberta_lr_roberta_{1}4.pkl'.format(output_parameters_dirpath, task_type)
         else:
-            roberta_cls_fname = '{0}/roberta_lr_roberta_{1}6.pkl'.format(output_parameters_dirpath, task_type)
+            roberta_cls_fname = '{0}/roberta_lr_roberta_{1}2.pkl'.format(output_parameters_dirpath, task_type)
 
         # train roberta cls
         roberta_cls = RandomForestClassifier(n_estimators=ne, max_depth=md, criterion='entropy', warm_start=False, bootstrap=False, )

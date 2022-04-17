@@ -3482,7 +3482,6 @@ def qa_trojan_detector(model, model_filepath, tokenizer_filepath, result_filepat
     if not model_type.startswith('Roberta'):
         roberta_x = x[:1] + list(np.amin(np.array([loss1[:3,:], loss1[3:,:]]), axis=0).reshape(-1)) + list( loss2.reshape(-1) ) + list(loss0_1) + list(loss0_2)
     else:
-        # roberta_x = x[:1] + list(np.amin(np.array([loss1[:3,:], loss1[3:,:]]), axis=0).reshape(-1)) + list(np.amin(loss2.reshape((6,3)), axis=1) ) + list(loss0_1) + list(loss0_2)
         roberta_x = x[:1] + list(np.amin(np.array([loss1[:3,:], loss1[3:,:]]), axis=0).reshape(-1)) + list(np.amin(loss2.reshape((6,3)), axis=1) ) + list(loss0_1) + list(loss0_2)
 
     roberta_x = np.array([roberta_x])
