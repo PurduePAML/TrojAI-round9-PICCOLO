@@ -1300,7 +1300,7 @@ def inject_idx(tokenizer, full_model, texts, fys, trigger_idxs, config, benign_m
     return [[asr11, asr12],  [asr21, asr22]], [[ce_loss1, ce_loss2], [ce_loss3, ce_loss4]]
 
 
-def sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, parameters):
+def sc_trojan_detector(full_model, model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, parameters):
     start = time.time()
     
     print('sc parameters', parameters)
@@ -1347,10 +1347,12 @@ def sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scra
 
     # load the classification model and move it to the GPU
     # model = torch.load(model_filepath, map_location=torch.device('cuda'))
-    full_model = torch.load(model_filepath, map_location=torch.device(device))
+    # full_model = torch.load(model_filepath, map_location=torch.device(device))
     # embedding = full_model.transformer
     # word_embeddings = embedding.embeddings.word_embeddings
     # depth = word_embeddings.num_embeddings
+
+    full_model = full_model.cuda()
 
     target_layers = []
     model_type = full_model.__class__.__name__

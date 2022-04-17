@@ -133,7 +133,7 @@ def example_trojan_detector(model_filepath,
         print('examples_dirpath = {}'.format(examples_dirpath))
         sc_parameters = [for_submission, is_configure]
         sc_parameters += parameters[:3]
-        output, features = sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)[:2]
+        output, features = sc_trojan_detector(model, model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)[:2]
         print('features', features)
         fields = ['emb_id'] + ['sc_asr_'+str(_) for _ in range(len(features)-1)]
     elif model_type.endswith('TokenClassification'): 
@@ -145,7 +145,7 @@ def example_trojan_detector(model_filepath,
         print('examples_dirpath = {}'.format(examples_dirpath))
         ner_parameters = [for_submission, is_configure]
         ner_parameters += parameters[3:6]
-        output, features = ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, ner_parameters)[:2]
+        output, features = ner_trojan_detector(model, model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, ner_parameters)[:2]
         fields = ['emb_id'] + ['ner_asr_'+str(_) for _ in range(len(features)-1)]
     elif model_type.endswith('QuestionAnswering'): 
         # # TODO maunally set the examples dir
@@ -156,7 +156,7 @@ def example_trojan_detector(model_filepath,
         print('examples_dirpath = {}'.format(examples_dirpath))
         qa_parameters = [for_submission, is_configure]
         qa_parameters += parameters[6:9]
-        output, features = qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, qa_parameters)[:2]
+        output, features = qa_trojan_detector(model, model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, qa_parameters)[:2]
         fields = ['emb_id'] + ['qa_asr_'+str(_) for _ in range(len(features)-1)]
 
     end_time = time.time()
@@ -230,7 +230,7 @@ def feature_extractor(mname, output_parameters_dirpath, configure_models_dirpath
         #     examples_dirpath = '/sc_clean_example_data/'
         sc_parameters = [for_submission, is_configure]
         sc_parameters += parameters[:3]
-        output, features, roberta_features = sc_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
+        output, features, roberta_features = sc_trojan_detector(model, model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
         fields = ['emb_id'] + ['sc_asr_'+str(_) for _ in range(len(features)-1)]
     elif model_type.endswith('TokenClassification'): 
         # # TODO maunally set the examples dir
@@ -240,7 +240,7 @@ def feature_extractor(mname, output_parameters_dirpath, configure_models_dirpath
         #     examples_dirpath = '/ner_clean_example_data/'
         sc_parameters = [for_submission, is_configure]
         sc_parameters += parameters[3:6]
-        output, features, roberta_features = ner_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
+        output, features, roberta_features = ner_trojan_detector(model, model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
         fields = ['emb_id'] + ['ner_asr_'+str(_) for _ in range(len(features)-1)]
     elif model_type.endswith('QuestionAnswering'): 
         # # TODO maunally set the examples dir
@@ -250,7 +250,7 @@ def feature_extractor(mname, output_parameters_dirpath, configure_models_dirpath
         #     examples_dirpath = '/qa_clean_example_data/'
         sc_parameters = [for_submission, is_configure]
         sc_parameters += parameters[6:9]
-        output, features, roberta_features = qa_trojan_detector(model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
+        output, features, roberta_features = qa_trojan_detector(model, model_filepath, tokenizer_filepath, result_filepath, scratch_dirpath, examples_dirpath, round_training_dataset_dirpath, learned_parameters_dirpath, features_filepath, sc_parameters)
         fields = ['emb_id'] + ['qa_asr_'+str(_) for _ in range(len(features)-1)]
 
     with open(features_filepath, 'w') as csvfile: 
