@@ -60,38 +60,6 @@ torch.backends.cudnn.benchmark = False
 np.random.seed(random_seed)
 random.seed(random_seed)
 
-def defer_output(output, model_type):
-
-    output = np.clip(output, 0.115, 1)
-
-    ten_digit = np.floor(output * 10)
-
-    if model_type == 'ElectraForSequenceClassification':
-        new_output = ten_digit/10. + 0.015
-    elif model_type == 'DistilBertForSequenceClassification':
-        new_output = ten_digit/10. + 0.025
-    elif model_type == 'RobertaForSequenceClassification':
-        new_output = ten_digit/10. + 0.035
-    elif model_type == 'ElectraForTokenClassification':
-        new_output = ten_digit/10. + 0.045
-    elif model_type == 'DistilBertForTokenClassification':
-        new_output = ten_digit/10. + 0.055
-    elif model_type == 'RobertaForTokenClassification':
-        new_output = ten_digit/10. + 0.065
-    elif model_type == 'ElectraForQuestionAnswering':
-        new_output = ten_digit/10. + 0.075
-    elif model_type == 'DistilBertForQuestionAnswering':
-        new_output = ten_digit/10. + 0.085
-    elif model_type == 'RobertaForQuestionAnswering':
-        new_output = ten_digit/10. + 0.095
-    else:
-        print('error model type unseen', model_type, output)
-        new_output = output
-
-    print('deter output', output, new_output)
-
-    return new_output
-
 
 def example_trojan_detector(model_filepath,
                             tokenizer_filepath,
@@ -162,11 +130,10 @@ def example_trojan_detector(model_filepath,
     end_time = time.time()
     print('model type', model_type, 'time', end_time - start_time)
 
-    # output differetidifferetiation
-    if True:
-        output = defer_output(output, model_type)
+    if model_type.endswith('QuestionAnswering'): 
+        output = np.clip(output, 0.025, 0.975)
     else:
-        print(model_type, 'output', output)
+        output = np.clip(output, 0.1, 0.975)
 
     with open(features_filepath, 'w') as csvfile: 
         csvwriter = csv.writer(csvfile)
